@@ -54,8 +54,8 @@ Os pontos de integração estão comentados em `lib/whop.ts`.
 | Comando | O que faz |
 | --- | --- |
 | `npm run dev` | Servidor de desenvolvimento na porta 43123 |
-| `npm run db:setup` | Cria o SQLite e o dono da plataforma |
+| `npm run db:setup` | Sincroniza o PostgreSQL e cria o dono da plataforma |
 | `npm run lint` | ESLint |
 | `npm run build` | Build de produção |
 
-O banco local é SQLite (`prisma/dev.db`). Para produção, troque o provider no `schema.prisma` para PostgreSQL e ajuste `DATABASE_URL`.
+O banco é PostgreSQL (`provider = "postgresql"` no `schema.prisma`). Aponte `DATABASE_URL` para o Postgres local ou para a Internal Database URL da Render.

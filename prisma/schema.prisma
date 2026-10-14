@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -19,9 +20,12 @@ model User {
   kycStatus          String    @default("not_started")
   kycDetail          String?
   kycCheckedAt       DateTime?
+  /// active | suspended, lido de accounts.retrieve na Whop.
+  accountStatus      String    @default("active")
   feePercentOverride Float?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+
   store    Store?
   products Product[]
   sales    Sale[]
@@ -38,8 +42,21 @@ model Store {
   primaryColor String   @default("#16382c")
   accentColor  String   @default("#0f6e56")
   published    Boolean  @default(true)
+  /// Site principal (https). A Whop recebe este valor em accounts.update website.
+  website      String?
+  /// Rede ou site informado no cadastro, mesmo quando não é um site genérico.
+  socialUrl    String?
+  instagram    String?
+  youtube      String?
+  linkedin     String?
+  /// Chave interna (education, mentorship, …). O código da Whop é mapeado na hora do sync.
+  businessType String   @default("digital_product")
+  industryType String   @default("knowledge_business")
+  /// ISO 3166-1 alpha-2. A Whop espera o país neste formato.
+  country      String   @default("BR")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
   products Product[]
 }
 
@@ -50,10 +67,19 @@ model Product {
   sellerId             String
   seller               User     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   name                 String
+  subtitle             String   @default("")
   description          String   @default("")
+  /// mentoria_1_1, curso, comunidade, software, ebook, consultoria, assinatura, outro
+  productType          String   @default("outro")
+  /// manual, email, community, download
+  deliveryMethod       String   @default("manual")
   price                Float
   currency             String   @default("usd")
   imageUrl             String?
+  /// Atalho opcional. O checkout canônico continua /checkout/[id].
+  slug                 String?  @unique
+  /// active | draft. `active` espelha este campo para a vitrine pública.
+  status               String   @default("active")
   whopPlanId           String?
   whopCheckoutId       String?
   whopPurchaseUrl      String?
@@ -61,7 +87,23 @@ model Product {
   active               Boolean  @default(true)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
-  sales Sale[]
+
+  prices ProductPrice[]
+  sales  Sale[]
+}
+
+/// Opção extra de preço. Cada uma tem a própria Checkout Configuration (Direct Charge).
+model ProductPrice {
+  id                   String   @id @default(cuid())
+  productId            String
+  product              Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  label                String   @default("")
+  amount               Float
+  currency             String   @default("usd")
+  whopPlanId           String?
+  whopPurchaseUrl      String?
+  applicationFeeAmount Float?
+  createdAt            DateTime @default(now())
 }
 
 /// Venda registrada pelo webhook da Whop (ou pela sincronização manual).
