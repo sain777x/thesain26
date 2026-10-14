@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AdminTreasury, type TreasuryRow } from "@/components/admin-treasury";
 import { FeeForm, SellerFeeForm } from "@/components/admin-forms";
 import { formatDate, formatMoney, kycLabel } from "@/lib/format";
+import { loadSellerTreasury } from "@/lib/payouts";
 import { prisma } from "@/lib/prisma";
 import { getPlatformSettings } from "@/lib/platform";
 
@@ -30,6 +32,15 @@ export default async function AdminPage() {
       _count: true,
     }),
   ]);
+
+  const treasuryRows: TreasuryRow[] = await mapPool(sellers, 4, async (seller) => ({
+    id: seller.id,
+    name: seller.name,
+    email: seller.email,
+    store: seller.store?.name ?? null,
+    account: seller.whopBizId,
+    treasury: seller.whopBizId ? await loadSellerTreasury(seller.whopBizId) : null,
+  }));
 
   return (
     <div className="space-y-8">
@@ -76,6 +87,15 @@ export default async function AdminPage() {
             Um vendedor pode ter uma taxa própria.
           </p>
           <FeeForm feePercent={settings.feePercent} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Saldos dos vendedores</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AdminTreasury rows={treasuryRows} />
         </CardContent>
       </Card>
 
@@ -158,10 +178,8 @@ export default async function AdminPage() {
           ) : (
             <ul className="divide-y">
               {sales.map((sale) => (
-                <li
-                  key={sale.id}
-                  className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
-                >
+                <li key={sale.id} className="py-3 text-sm">
+                  <Link href={`/admin/vendas/${sale.id}`} className="flex flex-wrap items-center justify-between gap-2">
                   <span>
                     {sale.product?.name ?? "Produto"} · {sale.seller?.name ?? "vendedor"}
                   </span>
@@ -170,6 +188,7 @@ export default async function AdminPage() {
                     {formatMoney(sale.applicationFee, sale.currency)} · {sale.status} ·{" "}
                     {formatDate(sale.createdAt)}
                   </span>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -178,4 +197,18 @@ export default async function AdminPage() {
       </Card>
     </div>
   );
+}
+
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let index = 0;
+  async function worker() {
+    while (index < items.length) {
+      const current = index;
+      index += 1;
+      results[current] = await fn(items[current]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
 }

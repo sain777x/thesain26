@@ -31,9 +31,15 @@ export function sellerAccountLabel(kycStatus: string, accountStatus: string) {
 
 const saleStatusLabels: Record<string, string> = {
   paid: "Paga",
+  succeeded: "Paga",
   pending: "Pendente",
+  open: "Em aberto",
+  authorized: "Autorizada",
   failed: "Falhou",
+  void: "Anulada",
+  uncollectible: "Incobrável",
   refunded: "Reembolsada",
+  partially_refunded: "Reembolso parcial",
 };
 
 export function saleStatusLabel(status: string) {
@@ -49,6 +55,38 @@ export function formatMoney(amount: number, currency = "usd") {
   } catch {
     return `${currency.toUpperCase()} ${amount.toFixed(2)}`;
   }
+}
+
+const payoutStatusLabels: Record<string, string> = {
+  requested: "Solicitado",
+  in_review: "Em análise",
+  processing: "A caminho",
+  completed: "Pago",
+  reversed: "Estornado",
+  canceled: "Cancelado",
+  failed: "Falhou",
+  denied: "Recusado",
+  created: "Salva",
+  active: "Ativa",
+  broken: "Indisponível",
+};
+
+export function payoutStatusLabel(status: string) {
+  return payoutStatusLabels[status] ?? status;
+}
+
+/** Prazo curto no mesmo vocabulário do seletor de carteira: Hoje, Amanhã, N dias. */
+export function arrivalLabel(value: string | null | undefined) {
+  if (!value) return "A confirmar";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "A confirmar";
+  const now = new Date();
+  const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const end = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const days = Math.round((end - start) / 86_400_000);
+  if (days <= 0) return "Hoje";
+  if (days === 1) return "Amanhã";
+  return `${days} dias`;
 }
 
 export function formatDate(date: Date | string) {

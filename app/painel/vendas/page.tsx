@@ -116,8 +116,14 @@ export default async function VendasPage({
                 <tbody>
                   {sales.map((sale) => (
                     <tr key={sale.id} className="border-t">
-                      <td className="py-3">{formatDate(sale.createdAt)}</td>
-                      <td className="py-3">{sale.product?.name ?? "—"}</td>
+                      <td className="py-3">
+                        <Link href={`/painel/vendas/${sale.id}`} className="underline">
+                          {formatDate(sale.createdAt)}
+                        </Link>
+                      </td>
+                      <td className="py-3">
+                        <Link href={`/painel/vendas/${sale.id}`}>{sale.product?.name ?? "—"}</Link>
+                      </td>
                       <td className="py-3">{sale.buyerEmail ?? "—"}</td>
                       <td className="py-3">{formatMoney(sale.amount, sale.currency)}</td>
                       <td className="py-3">{formatMoney(sale.applicationFee, sale.currency)}</td>

@@ -460,10 +460,14 @@ export async function listAccountPayments(accountId: string) {
 export type PayoutRow = {
   id: string;
   amount: number;
+  fee: number;
+  net: number;
   currency: string;
   status: string;
   createdAt: string;
   destination: string | null;
+  arrival: string | null;
+  failure: string | null;
 };
 
 /** Histórico de saques da connected account (GET /payouts). */
@@ -476,10 +480,18 @@ export async function listPayoutHistory(accountId: string): Promise<PayoutRow[]>
   return page.data.map((item) => ({
     id: item.id,
     amount: Number(item.amount) || 0,
+    fee: Number(item.fee_amount) || 0,
+    net: Number(item.net_amount) || 0,
     currency: item.currency || "usd",
     status: item.status,
     createdAt: item.created_at,
-    destination: item.payout_method?.nickname || item.payer_name || null,
+    destination:
+      item.payout_method?.nickname ||
+      item.payout_method?.supported_payout_method?.payer_name ||
+      item.payer_name ||
+      null,
+    arrival: item.estimated_arrival,
+    failure: item.failure?.message ?? null,
   }));
 }
 
@@ -491,6 +503,9 @@ export type PayoutMethodRow = {
   status: string;
   reference: string | null;
   deliveryType: string | null;
+  isDefault: boolean;
+  iconUrl: string | null;
+  estimatedArrival: string | null;
 };
 
 /** Métodos de saque já salvos na Whop. O cadastro em si abre o payouts_portal. */
@@ -508,5 +523,8 @@ export async function listPayoutMethods(accountId: string): Promise<PayoutMethod
     status: item.status,
     reference: item.account_reference,
     deliveryType: item.supported_payout_method?.delivery_type ?? null,
+    isDefault: item.is_default,
+    iconUrl: item.supported_payout_method?.icon_url ?? null,
+    estimatedArrival: item.estimated_arrival?.standard ?? item.estimated_arrival?.instant ?? null,
   }));
 }

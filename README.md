@@ -1,12 +1,12 @@
 # thesain26
 
-Marketplace de produtos digitais em cima da Whop (Whop for Platforms). Vendedores abrem loja, passam pelo KYC e pelos saques oficiais da Whop, e vendem com checkout embutido. A thesain26 fica com uma comissão automática em cada venda, no modelo de **Direct Charges** (`application_fee_amount`).
+Marketplace de produtos digitais em cima da Whop (Whop for Platforms). Vendedores abrem loja, passam pelo KYC e sacam na própria thesain26. O checkout fica embutido. A thesain26 fica com uma comissão automática em cada venda, no modelo de **Direct Charges** (`application_fee_amount`).
 
 ## O que a plataforma faz
 
 - Cadastro do vendedor com nome, loja, descrição, site ou rede, tipo de negócio, indústria e país. A Connected Account nasce na Whop e o perfil segue por `accounts.update`.
 - KYC em `/painel/verificacoes`, com Account Link (`use_case: account_onboarding`) e a sessão da Whop quando ela devolve um link.
-- Saldo, reserva, métodos e histórico de saques. Adicionar método abre o Account Link `payouts_portal`.
+- Saldo, reserva, carteiras e saque na própria página `/painel/saldo`, sem sair do site. O admin vê pendente do dia seguinte, reservas de 14 e 30 dias, e o que já foi sacado.
 - Vendas listadas ao abrir a página (webhook em tempo real e sincronização de fallback), com filtro e CSV.
 - Loja, produtos e checkout embutido (`WhopCheckoutEmbed`).
 - Webhook em `/api/webhooks/whop` para registrar pagamentos.
@@ -43,7 +43,7 @@ Troque a senha antes de expor o ambiente.
 
 1. A `WHOP_API_KEY` precisa ser uma **Account API key** da conta da plataforma, com permissão para criar connected accounts, account links, checkout configurations, ler saldo e listar pagamentos.
 2. No dashboard da Whop, crie um webhook apontando para `https://seu-dominio/api/webhooks/whop` e copie o segredo `ws_...` para `WHOP_WEBHOOK_SECRET`. Eventos úteis: `payment.succeeded`, `payment.failed`, `payment.pending`, `refund.created`, `verification.succeeded`, `payout_account.status_updated`.
-3. Account Links de KYC voltam para `/painel/verificacoes`. O de saque volta para `/painel/saldo`.
+3. Account Links de KYC voltam para `/painel/verificacoes`. Carteira e saque ficam em `/painel/saldo`.
 4. Em localhost a Whop não entrega webhook. A página de vendas sincroniza ao abrir. Um túnel (ngrok, Cloudflare Tunnel) entrega o evento na hora.
 5. O `redirect_url` do checkout só é enviado quando `NEXT_PUBLIC_APP_URL` começa com `https://`. No embed local, o retorno do comprador usa `returnUrl`.
 

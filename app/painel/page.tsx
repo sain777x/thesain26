@@ -268,11 +268,13 @@ export default async function PainelPage({
           ) : (
             <ul className="divide-y">
               {recent.map((sale) => (
-                <li key={sale.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+                <li key={sale.id} className="py-3 text-sm">
+                  <Link href={`/painel/vendas/${sale.id}`} className="flex items-center justify-between gap-3">
                   <span className="min-w-0 truncate">{sale.product?.name ?? "Produto"}</span>
                   <span className="shrink-0">
                     {formatMoney(sale.amount, sale.currency)} · {saleStatusLabel(sale.status)}
                   </span>
+                  </Link>
                 </li>
               ))}
             </ul>

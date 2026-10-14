@@ -19,7 +19,7 @@ export default async function AdminLayout({
 
   return (
     <div className="mx-auto min-h-screen w-full max-w-6xl px-4 py-6 sm:px-6">
-      <header className="mb-8 flex items-center justify-between gap-4">
+      <header className="mb-8 flex items-center justify-between gap-4 print:hidden">
         <div>
           <Logo />
           <p className="mt-2 text-sm text-muted-foreground">Dono da plataforma</p>
