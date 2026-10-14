@@ -4,10 +4,10 @@ Marketplace de produtos digitais em cima da Whop (Whop for Platforms). Vendedore
 
 ## O que a plataforma faz
 
-- Cadastro e login de vendedores (email e senha).
-- Connected Account na Whop no cadastro, com o `biz_id` salvo no usuário.
-- KYC por Account Link (`use_case: account_onboarding`).
-- Saldo e saques por Account Link (`use_case: payouts_portal`) e pelo `BalanceElement` da Whop.
+- Cadastro do vendedor com nome, loja, descrição, site ou rede, tipo de negócio, indústria e país. A Connected Account nasce na Whop e o perfil segue por `accounts.update`.
+- KYC em `/painel/verificacoes`, com Account Link (`use_case: account_onboarding`) e a sessão da Whop quando ela devolve um link.
+- Saldo, reserva, métodos e histórico de saques. Adicionar método abre o Account Link `payouts_portal`.
+- Vendas listadas ao abrir a página (webhook em tempo real e sincronização de fallback), com filtro e CSV.
 - Loja, produtos e checkout embutido (`WhopCheckoutEmbed`).
 - Webhook em `/api/webhooks/whop` para registrar pagamentos.
 - Painel do dono com vendedores, status de KYC, vendas e total de comissões.
@@ -43,8 +43,8 @@ Troque a senha antes de expor o ambiente.
 
 1. A `WHOP_API_KEY` precisa ser uma **Account API key** da conta da plataforma, com permissão para criar connected accounts, account links, checkout configurations, ler saldo e listar pagamentos.
 2. No dashboard da Whop, crie um webhook apontando para `https://seu-dominio/api/webhooks/whop` e copie o segredo `ws_...` para `WHOP_WEBHOOK_SECRET`. Eventos úteis: `payment.succeeded`, `payment.failed`, `payment.pending`, `refund.created`, `verification.succeeded`, `payout_account.status_updated`.
-3. Account Links de KYC e de saque voltam para `/painel` e `/painel/saldo`.
-4. Em localhost a Whop não entrega webhook. Use um túnel (ngrok, Cloudflare Tunnel) ou o botão **Sincronizar com a Whop** nas vendas do vendedor.
+3. Account Links de KYC voltam para `/painel/verificacoes`. O de saque volta para `/painel/saldo`.
+4. Em localhost a Whop não entrega webhook. A página de vendas sincroniza ao abrir. Um túnel (ngrok, Cloudflare Tunnel) entrega o evento na hora.
 5. O `redirect_url` do checkout só é enviado quando `NEXT_PUBLIC_APP_URL` começa com `https://`. No embed local, o retorno do comprador usa `returnUrl`.
 
 Os pontos de integração estão comentados em `lib/whop.ts`.

@@ -1,34 +1,44 @@
 import Link from "next/link";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AccountLinkButton } from "@/components/account-link-button";
+import { SalesChart, buildSalesSeries } from "@/components/sales-chart";
 import { ReloadAction } from "@/components/reload-action";
 import { appUrl } from "@/lib/app-url";
-import { formatMoney, kycLabel } from "@/lib/format";
+import { formatMoney, saleStatusLabel, sellerAccountLabel } from "@/lib/format";
 import { requireSeller } from "@/lib/guards";
 import { prisma } from "@/lib/prisma";
 import { feePercentFor } from "@/lib/platform";
-import { createAccountLink, syncKycStatus, whopErrorMessage } from "@/lib/whop";
+import { syncSellerSales } from "@/lib/sales-sync";
+import {
+  createAccountLink,
+  getAccountBalance,
+  syncKycStatus,
+  syncOperatingStatus,
+  whopErrorMessage,
+} from "@/lib/whop";
+import { cn } from "cn";
 
 export const dynamic = "force-dynamic";
 
 export default async function PainelPage({
   searchParams,
 }: {
-  searchParams: Promise<{ onboarding?: string; aviso?: string }>;
+  searchParams: Promise<{ onboarding?: string; aviso?: string; dias?: string }>;
 }) {
   const query = await searchParams;
   let user = await requireSeller();
   let linkError: string | null = null;
+  const days = query.dias === "30" ? 30 : 7;
 
   if (query.onboarding === "refresh" && user.whopBizId) {
     try {
       const url = await createAccountLink({
         accountId: user.whopBizId,
         useCase: "account_onboarding",
-        returnUrl: `${appUrl()}/painel?onboarding=return`,
-        refreshUrl: `${appUrl()}/painel?onboarding=refresh`,
+        returnUrl: `${appUrl()}/painel/verificacoes?onboarding=return`,
+        refreshUrl: `${appUrl()}/painel/verificacoes?onboarding=refresh`,
       });
       redirect(url);
     } catch (error) {
@@ -54,24 +64,88 @@ export default async function PainelPage({
     }
   }
 
-  const [feePercent, sales, productCount] = await Promise.all([
+  let balance: Awaited<ReturnType<typeof getAccountBalance>> | null = null;
+  if (user.whopBizId) {
+    const [salesSync, kycSync, statusSync, balanceSync] = await Promise.allSettled([
+      syncSellerSales(user.whopBizId),
+      syncKycStatus(user.whopBizId),
+      syncOperatingStatus(user.whopBizId),
+      getAccountBalance(user.whopBizId),
+    ]);
+    if (balanceSync.status === "fulfilled") balance = balanceSync.value;
+    else linkError = linkError ?? whopErrorMessage(balanceSync.reason);
+
+    const nextKyc = kycSync.status === "fulfilled" ? kycSync.value : null;
+    const nextStatus = statusSync.status === "fulfilled" ? statusSync.value : user.accountStatus;
+    if (kycSync.status === "rejected" && !linkError) {
+      linkError = whopErrorMessage(kycSync.reason);
+    }
+    if (statusSync.status === "rejected" && !linkError) {
+      linkError = whopErrorMessage(statusSync.reason);
+    }
+    const kycChanged = Boolean(
+      nextKyc &&
+        (nextKyc.status !== user.kycStatus || nextKyc.detail !== user.kycDetail),
+    );
+    if (kycChanged || nextStatus !== user.accountStatus) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          ...(nextKyc
+            ? {
+                kycStatus: nextKyc.status,
+                kycDetail: nextKyc.detail,
+                kycCheckedAt: new Date(),
+              }
+            : {}),
+          accountStatus: nextStatus,
+        },
+        include: { store: true },
+      });
+    }
+    if (salesSync.status === "rejected" && !linkError) {
+      linkError = whopErrorMessage(salesSync.reason);
+    }
+  }
+
+  const since = new Date();
+  since.setHours(0, 0, 0, 0);
+  since.setDate(since.getDate() - (days - 1));
+
+  const [feePercent, totals, recent, chartSales, productCount] = await Promise.all([
     feePercentFor(user),
+    prisma.sale.aggregate({
+      where: { sellerId: user.id, status: "paid" },
+      _sum: { amount: true, applicationFee: true },
+      _count: true,
+    }),
     prisma.sale.findMany({
       where: { sellerId: user.id },
       orderBy: { createdAt: "desc" },
       take: 5,
       include: { product: true },
     }),
+    prisma.sale.findMany({
+      where: { sellerId: user.id, status: "paid", createdAt: { gte: since } },
+      select: { createdAt: true, amount: true },
+    }),
     prisma.product.count({ where: { sellerId: user.id, active: true } }),
   ]);
-  const paid = sales.filter((sale) => sale.status === "paid");
-  const revenue = paid.reduce((sum, sale) => sum + sale.amount, 0);
+
+  const revenue = totals._sum.amount ?? 0;
+  const commission = totals._sum.applicationFee ?? 0;
+  const accountLabel = sellerAccountLabel(user.kycStatus, user.accountStatus);
+  const chart = buildSalesSeries(chartSales, days);
+  const storeHref = user.store ? `/loja/${user.store.slug}` : "/painel/loja";
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">Painel do vendedor</p>
-        <h1 className="text-4xl">Olá, {user.name.split(" ")[0]}</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-sm text-muted-foreground">Painel do vendedor</p>
+          <h1 className="text-4xl">Olá, {user.name.split(" ")[0]}</h1>
+        </div>
+        <Badge variant={accountLabel === "Ativa" ? "default" : "outline"}>{accountLabel}</Badge>
       </div>
 
       {query.aviso ? (
@@ -100,66 +174,83 @@ export default async function PainelPage({
         </Card>
       ) : null}
 
-      {user.whopBizId && user.kycStatus !== "verified" ? (
-        <Card className="border-primary/30">
-          <CardHeader>
-            <CardTitle>Completar verificação (KYC)</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Status atual: {kycLabel(user.kycStatus)}
-              {user.kycDetail ? ` · ${user.kycDetail}` : ""}. A Whop abre o
-              fluxo oficial de onboarding. Quando terminar, você volta para este
-              painel e o status é atualizado.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <AccountLinkButton useCase="account_onboarding">
-                Completar verificação (KYC)
-              </AccountLinkButton>
-              <ReloadAction href="/api/whop/sync-kyc" variant="outline">
-                Atualizar status
-              </ReloadAction>
-            </div>
-          </CardContent>
-        </Card>
-      ) : user.whopBizId ? (
-        <Card>
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Verificação</p>
-              <p className="font-medium">KYC aprovado na Whop</p>
-            </div>
-            <Badge>Verificado</Badge>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader>
-            <CardTitle>Produtos ativos</CardTitle>
-          </CardHeader>
-          <CardContent className="font-heading text-3xl">{productCount}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Vendas pagas</CardTitle>
+            <CardTitle>Saldo disponível</CardTitle>
           </CardHeader>
           <CardContent className="font-heading text-3xl">
-            {formatMoney(revenue)}
+            {balance ? formatMoney(balance.available, balance.currency) : "—"}
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Sua comissão</CardTitle>
+            <CardTitle>Saldo pendente</CardTitle>
+          </CardHeader>
+          <CardContent className="font-heading text-3xl">
+            {balance ? formatMoney(balance.pending, balance.currency) : "—"}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Total de vendas</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-heading text-3xl">{feePercent}%</p>
+            <p className="font-heading text-3xl">{formatMoney(revenue)}</p>
             <p className="text-xs text-muted-foreground">
-              A thesain26 retém isso em cada venda.
+              {totals._count} {totals._count === 1 ? "venda paga" : "vendas pagas"}
             </p>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Comissão retida</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="font-heading text-3xl">{formatMoney(commission)}</p>
+            <p className="text-xs text-muted-foreground">
+              {feePercent}% em cada venda · {productCount} produtos ativos
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle>Vendas dos últimos {days} dias</CardTitle>
+          <div className="flex gap-2 text-sm">
+            <Link href="/painel?dias=7" className={days === 7 ? "underline" : "text-muted-foreground"}>
+              7 dias
+            </Link>
+            <Link href="/painel?dias=30" className={days === 30 ? "underline" : "text-muted-foreground"}>
+              30 dias
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {chart.every((point) => point.total === 0) ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhuma venda paga neste período.
+            </p>
+          ) : (
+            <SalesChart points={chart} currency="usd" />
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <Link href="/painel/produtos/novo" className={cn(buttonVariants(), "h-10")}>
+          Criar produto
+        </Link>
+        <Link href={storeHref} className={cn(buttonVariants({ variant: "outline" }), "h-10")}>
+          Ver loja
+        </Link>
+        <Link href="/painel/verificacoes" className={cn(buttonVariants({ variant: "outline" }), "h-10")}>
+          Completar KYC
+        </Link>
+        <Link href="/painel/saldo" className={cn(buttonVariants({ variant: "outline" }), "h-10")}>
+          Adicionar payout
+        </Link>
       </div>
 
       <Card>
@@ -170,17 +261,17 @@ export default async function PainelPage({
           </Link>
         </CardHeader>
         <CardContent>
-          {sales.length === 0 ? (
+          {recent.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Nenhuma venda ainda. Publique um produto e compartilhe a loja.
             </p>
           ) : (
             <ul className="divide-y">
-              {sales.map((sale) => (
-                <li key={sale.id} className="flex items-center justify-between py-3 text-sm">
-                  <span>{sale.product?.name ?? "Produto"}</span>
-                  <span>
-                    {formatMoney(sale.amount, sale.currency)} · {sale.status}
+              {recent.map((sale) => (
+                <li key={sale.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+                  <span className="min-w-0 truncate">{sale.product?.name ?? "Produto"}</span>
+                  <span className="shrink-0">
+                    {formatMoney(sale.amount, sale.currency)} · {saleStatusLabel(sale.status)}
                   </span>
                 </li>
               ))}

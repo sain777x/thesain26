@@ -1,18 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { appUrl } from "@/lib/app-url";
 import { HttpError, requireSeller, toErrorResponse } from "@/lib/guards";
 import { feePercentFor } from "@/lib/platform";
-import { createDirectChargeCheckout } from "@/lib/whop";
+import { productBodySchema, productStatus } from "@/lib/product-schema";
+import {
+  openSellerPlan,
+  saveExtraPrices,
+  uniqueProductSlug,
+} from "@/lib/product-checkout";
 
-const schema = z.object({
-  name: z.string().trim().min(2).max(80),
-  description: z.string().trim().max(4000),
-  price: z.number().min(1).max(10000),
-  imageUrl: z.string().trim().max(500).optional().or(z.literal("")),
-  active: z.boolean(),
-});
+const schema = productBodySchema;
 
 async function ownProduct(userId: string, productId: string) {
   const product = await prisma.product.findFirst({
@@ -40,37 +38,71 @@ export async function PATCH(
     }
 
     const price = Math.round(body.price * 100) / 100;
+    const status = productStatus(body);
+    const slug = await uniqueProductSlug(body.slug, current.id);
     const feePercent = await feePercentFor(user);
-    const checkout = await createDirectChargeCheckout({
+
+    // Nova Checkout Configuration para o preço principal, de novo com a comissão.
+    // A Whop não atualiza application_fee_amount de um plan já criado por aqui,
+    // então cada salvamento gera a variante atual e guarda plan_id e purchase_url.
+    const checkout = await openSellerPlan({
       accountId: user.whopBizId,
-      price,
-      feePercent,
-      title: body.name,
+      productId: current.id,
+      sellerId: user.id,
+      storeId: current.storeId,
+      storeSlug: current.store.slug,
+      name: body.name,
       description: body.description,
-      redirectUrl: `${appUrl()}/loja/${current.store.slug}/obrigado`,
-      metadata: {
-        platform: "thesain26",
-        product_id: current.id,
-        seller_id: user.id,
-        store_id: current.storeId,
-      },
+      price,
+      currency: body.currency,
+      feePercent,
+      productType: body.productType,
+      deliveryMethod: body.deliveryMethod,
     });
 
     const product = await prisma.product.update({
       where: { id: current.id },
       data: {
         name: body.name,
+        subtitle: body.subtitle,
         description: body.description,
+        productType: body.productType,
+        deliveryMethod: body.deliveryMethod,
         price,
+        currency: body.currency,
         imageUrl: body.imageUrl || null,
-        active: body.active,
+        slug,
+        status,
+        active: status === "active",
         whopPlanId: checkout.planId,
         whopCheckoutId: checkout.sessionId,
         whopPurchaseUrl: checkout.purchaseUrl,
         applicationFeeAmount: checkout.applicationFeeAmount,
       },
     });
-    return NextResponse.json({ product });
+
+    const warnings = await saveExtraPrices(
+      {
+        accountId: user.whopBizId,
+        productId: current.id,
+        sellerId: user.id,
+        storeId: current.storeId,
+        storeSlug: current.store.slug,
+        name: body.name,
+        description: body.description,
+        price,
+        currency: body.currency,
+        feePercent,
+        productType: body.productType,
+        deliveryMethod: body.deliveryMethod,
+      },
+      body.prices,
+    );
+
+    return NextResponse.json({
+      product,
+      whopWarning: warnings.length ? warnings.join(" ") : null,
+    });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -94,7 +126,7 @@ export async function DELETE(
     if (sales > 0) {
       await prisma.product.update({
         where: { id: product.id },
-        data: { active: false },
+        data: { active: false, status: "draft" },
       });
       return NextResponse.json({ archived: true });
     }

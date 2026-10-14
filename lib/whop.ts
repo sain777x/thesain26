@@ -1,5 +1,15 @@
 import { WhopClient, type Whop } from "@whop/sdk";
+import {
+  buildSocialLinks,
+  normalizeHttpUrl,
+  toWhopClassification,
+} from "@/lib/business";
 import { applicationFeeAmount } from "@/lib/money";
+import {
+  buildVerificationTasks,
+  type InformationInput,
+  type VerificationTask,
+} from "@/lib/verification-tasks";
 
 /**
  * Cliente oficial da Whop.
@@ -48,11 +58,18 @@ export async function createConnectedAccount(params: {
   email: string;
   title: string;
   externalId: string;
+  country?: string | null;
+  website?: string | null;
 }) {
   const client = getWhop();
+  // accounts.create é idempotente em email + metadata.external_id.
+  // País e site já entram aqui; tipo de negócio e descrição vão no update,
+  // porque o create da Whop não aceita business_type nem description.
   const account = await client.accounts.create({
     email: params.email,
     title: params.title,
+    country: params.country || undefined,
+    website: params.website || undefined,
     metadata: {
       external_id: params.externalId,
       platform: "thesain26",
@@ -62,6 +79,62 @@ export async function createConnectedAccount(params: {
     throw new Error("A Whop não devolveu o id da connected account.");
   }
   return account.id;
+}
+
+export type CompanyProfileInput = {
+  title: string;
+  businessName: string;
+  description: string;
+  country: string;
+  website?: string | null;
+  socialUrl?: string | null;
+  instagram?: string | null;
+  youtube?: string | null;
+  linkedin?: string | null;
+  businessType: string;
+  industryType: string;
+};
+
+/**
+ * Envia o perfil da empresa para a Connected Account.
+ * O mapa de business_type / industry_group / industry_type está em lib/business.ts.
+ * Não reenviamos metadata aqui para não apagar o external_id gravado no create.
+ */
+export async function syncCompanyProfile(accountId: string, input: CompanyProfileInput) {
+  const client = getWhop();
+  const classification = toWhopClassification(input.businessType, input.industryType);
+  const website = normalizeHttpUrl(input.website);
+  const socialLinks = buildSocialLinks({
+    website,
+    socialUrl: normalizeHttpUrl(input.socialUrl),
+    instagram: normalizeHttpUrl(input.instagram),
+    youtube: normalizeHttpUrl(input.youtube),
+    linkedin: normalizeHttpUrl(input.linkedin),
+  });
+
+  await client.accounts.update({
+    id: accountId,
+    title: input.title,
+    business_name: input.businessName,
+    description: input.description.trim().slice(0, 400) || null,
+    country: input.country || null,
+    website,
+    business_type: classification.business_type,
+    industry_group: classification.industry_group,
+    industry_type: classification.industry_type,
+    other_business_description: classification.otherBusiness ?? null,
+    other_industry_description: classification.otherIndustry ?? null,
+    social_links: socialLinks,
+  });
+}
+
+/** status da conta na Whop: active ou suspended. */
+export async function syncOperatingStatus(
+  accountId: string,
+): Promise<"active" | "suspended"> {
+  const client = getWhop();
+  const account = await client.accounts.retrieve({ id: accountId });
+  return account.status === "suspended" ? "suspended" : "active";
 }
 
 export type AccountLinkUseCase = "account_onboarding" | "payouts_portal";
@@ -96,6 +169,7 @@ export async function createAccountLink(params: {
 type DirectChargeInput = {
   accountId: string;
   price: number;
+  currency?: string;
   feePercent: number;
   title: string;
   description?: string;
@@ -148,7 +222,7 @@ export async function createDirectChargeCheckout(
         redirect_url: redirect,
         plan: {
           account_id: input.accountId,
-          currency: "usd",
+          currency: (input.currency || "usd").toLowerCase(),
           plan_type: "one_time",
           initial_price: input.price,
           title: input.title,
@@ -177,6 +251,8 @@ export async function createDirectChargeCheckout(
 export type KycSnapshot = {
   status: "not_started" | "pending" | "verified" | "action_required" | "rejected";
   detail: string;
+  /** session_url da Whop (fluxo Sumsub) quando a verificação devolve um link. */
+  sessionUrl: string | null;
 };
 
 function mapVerificationStatus(status: string | undefined): KycSnapshot["status"] {
@@ -228,9 +304,12 @@ export async function syncKycStatus(accountId: string): Promise<KycSnapshot> {
     );
     const latest = items[0];
     if (latest?.status) {
+      const actionUrl = latest.requested_information?.find((item) => item.action_url)
+        ?.action_url;
       return {
         status: mapVerificationStatus(latest.status),
         detail: latest.status,
+        sessionUrl: latest.session_url || actionUrl || null,
       };
     }
   } catch (error) {
@@ -244,13 +323,92 @@ export async function syncKycStatus(accountId: string): Promise<KycSnapshot> {
       return {
         status: mapVerificationStatus(payoutStatus),
         detail: payoutStatus,
+        sessionUrl: null,
       };
     }
   } catch (error) {
     console.error("[thesain26] ledgerAccounts.retrieve", whopErrorMessage(error));
   }
 
-  return { status: "not_started", detail: "not_started" };
+  return { status: "not_started", detail: "not_started", sessionUrl: null };
+}
+
+/**
+ * Pendências da conta, no mesmo espírito do painel da Whop.
+ * `required_actions` é a lista oficial (KYC, pedido de informação, saque).
+ * Cada `requested_information` vira uma tarefa própria para o vendedor
+ * escolher qual resolver primeiro. Não inventamos prova de vendas:
+ * ela só entra quando a Whop pede.
+ */
+export async function listVerificationTasks(
+  accountId: string,
+  kycStatus: string,
+): Promise<VerificationTask[]> {
+  const client = getWhop();
+  const [accountResult, verificationsResult] = await Promise.allSettled([
+    client.accounts.retrieve({ id: accountId }),
+    client.verifications.list({ account_id: accountId }),
+  ]);
+
+  if (accountResult.status === "rejected" && verificationsResult.status === "rejected") {
+    throw accountResult.reason;
+  }
+
+  const actions =
+    accountResult.status === "fulfilled" ? (accountResult.value.required_actions ?? []) : [];
+  const information: InformationInput[] = [];
+  const documents: {
+    id: string;
+    document: string;
+    status?: string;
+    rejectionReason?: string | null;
+    sessionUrl?: string | null;
+  }[] = [];
+
+  if (verificationsResult.status === "fulfilled") {
+    for (const verification of verificationsResult.value.data ?? []) {
+      if (verification.status === "approved") continue;
+      for (const item of verification.requested_information ?? []) {
+        information.push({
+          id: item.id,
+          label: item.label,
+          requirement: item.requirement,
+          type: item.type,
+          actionUrl: item.action_url,
+          optional: item.optional,
+          detailsLabel: item.details_label,
+          errors: item.errors
+            ?.map((error) => error.reason || error.code || "")
+            .filter(Boolean),
+        });
+      }
+      for (const [index, document] of (verification.required_documents ?? []).entries()) {
+        if (!document.document) continue;
+        documents.push({
+          id: `${verification.id ?? "verification"}-${document.document}-${index}`,
+          document: document.document,
+          status: document.status,
+          rejectionReason: document.rejection_reason,
+          sessionUrl: verification.session_url,
+        });
+      }
+    }
+  }
+
+  return buildVerificationTasks({
+    kycStatus,
+    requiredActions: actions.map((action) => ({
+      action: action.action,
+      title: action.title,
+      description: action.description,
+      status: action.status,
+      cta: action.cta,
+      ctaLabel: action.cta_label,
+      blocked: action.blocked_capabilities ?? [],
+    })),
+    information,
+    documents,
+  });
 }
 
 export type BalanceSnapshot = {
@@ -297,4 +455,58 @@ export async function listAccountPayments(accountId: string) {
     direction: "desc",
   });
   return page.data;
+}
+
+export type PayoutRow = {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  createdAt: string;
+  destination: string | null;
+};
+
+/** Histórico de saques da connected account (GET /payouts). */
+export async function listPayoutHistory(accountId: string): Promise<PayoutRow[]> {
+  const client = getWhop();
+  const page = await client.payouts.list({
+    account_id: accountId,
+    first: 20,
+  });
+  return page.data.map((item) => ({
+    id: item.id,
+    amount: Number(item.amount) || 0,
+    currency: item.currency || "usd",
+    status: item.status,
+    createdAt: item.created_at,
+    destination: item.payout_method?.nickname || item.payer_name || null,
+  }));
+}
+
+export type PayoutMethodRow = {
+  id: string;
+  nickname: string | null;
+  payerName: string | null;
+  currency: string;
+  status: string;
+  reference: string | null;
+  deliveryType: string | null;
+};
+
+/** Métodos de saque já salvos na Whop. O cadastro em si abre o payouts_portal. */
+export async function listPayoutMethods(accountId: string): Promise<PayoutMethodRow[]> {
+  const client = getWhop();
+  const page = await client.payouts.methods.list({
+    account_id: accountId,
+    first: 20,
+  });
+  return page.data.map((item) => ({
+    id: item.id,
+    nickname: item.nickname,
+    payerName: item.payer_name,
+    currency: item.destination_currency,
+    status: item.status,
+    reference: item.account_reference,
+    deliveryType: item.supported_payout_method?.delivery_type ?? null,
+  }));
 }

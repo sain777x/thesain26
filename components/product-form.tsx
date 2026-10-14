@@ -2,24 +2,45 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  CURRENCIES,
+  DELIVERY_METHODS,
+  PRODUCT_TYPES,
+} from "@/lib/business";
+import { queueToast } from "@/components/toast";
+import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+type ExtraPrice = { label: string; amount: string };
+
 type ProductValues = {
   id?: string;
   name: string;
+  subtitle: string;
   description: string;
+  productType: string;
+  deliveryMethod: string;
   price: number;
+  currency: string;
   imageUrl: string;
-  active: boolean;
+  slug: string;
+  status: string;
+  prices: { label: string; amount: number }[];
 };
 
 export function ProductForm({ product }: { product?: ProductValues }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [extras, setExtras] = useState<ExtraPrice[]>(
+    product?.prices.map((item) => ({
+      label: item.label,
+      amount: String(item.amount),
+    })) ?? [],
+  );
   const editing = Boolean(product?.id);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -27,12 +48,24 @@ export function ProductForm({ product }: { product?: ProductValues }) {
     setPending(true);
     setError(null);
     const form = new FormData(event.currentTarget);
+    const prices = extras
+      .map((item) => ({
+        label: item.label.trim(),
+        amount: Number(item.amount),
+      }))
+      .filter((item) => Number.isFinite(item.amount) && item.amount > 0);
     const payload = {
       name: String(form.get("name") ?? ""),
+      subtitle: String(form.get("subtitle") ?? ""),
       description: String(form.get("description") ?? ""),
+      productType: String(form.get("productType") ?? "outro"),
+      deliveryMethod: String(form.get("deliveryMethod") ?? "manual"),
       price: Number(form.get("price") ?? 0),
+      currency: String(form.get("currency") ?? "usd"),
       imageUrl: String(form.get("imageUrl") ?? ""),
-      active: form.get("active") === "on",
+      slug: String(form.get("slug") ?? ""),
+      status: String(form.get("status") ?? "active"),
+      prices,
     };
     const response = await fetch(
       editing ? `/api/products/${product?.id}` : "/api/products",
@@ -42,12 +75,20 @@ export function ProductForm({ product }: { product?: ProductValues }) {
         body: JSON.stringify(payload),
       },
     );
-    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    const data = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      whopWarning?: string | null;
+    };
     if (!response.ok) {
       setError(data.error ?? "Não foi possível salvar o produto.");
       setPending(false);
       return;
     }
+    queueToast(
+      data.whopWarning
+        ? "Produto salvo. Alguma opção de preço não entrou na Whop."
+        : "Produto salvo e checkout da Whop atualizado.",
+    );
     router.push("/painel/produtos");
     router.refresh();
   }
@@ -63,28 +104,65 @@ export function ProductForm({ product }: { product?: ProductValues }) {
       setPending(false);
       return;
     }
+    queueToast("Produto removido.");
     router.push("/painel/produtos");
     router.refresh();
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="name">Nome</Label>
-        <Input id="name" name="name" defaultValue={product?.name} required />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="name">Nome do produto</Label>
+          <Input id="name" name="name" defaultValue={product?.name} required />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="subtitle">Rótulo / subtítulo</Label>
+          <Input id="subtitle" name="subtitle" defaultValue={product?.subtitle} />
+        </div>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="description">Descrição</Label>
+        <Label htmlFor="description">Descrição completa</Label>
         <Textarea
           id="description"
           name="description"
           defaultValue={product?.description}
-          className="min-h-28"
+          className="min-h-40"
         />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="price">Preço (USD)</Label>
+          <Label htmlFor="productType">Tipo de produto</Label>
+          <NativeSelect
+            id="productType"
+            name="productType"
+            defaultValue={product?.productType ?? "outro"}
+          >
+            {PRODUCT_TYPES.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="deliveryMethod">Forma de entrega</Label>
+          <NativeSelect
+            id="deliveryMethod"
+            name="deliveryMethod"
+            defaultValue={product?.deliveryMethod ?? "manual"}
+          >
+            {DELIVERY_METHODS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="space-y-2">
+          <Label htmlFor="price">Preço</Label>
           <Input
             id="price"
             name="price"
@@ -96,7 +174,87 @@ export function ProductForm({ product }: { product?: ProductValues }) {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="imageUrl">URL da imagem</Label>
+          <Label htmlFor="currency">Moeda</Label>
+          <NativeSelect id="currency" name="currency" defaultValue={product?.currency ?? "usd"}>
+            {CURRENCIES.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="status">Status</Label>
+          <NativeSelect id="status" name="status" defaultValue={product?.status ?? "active"}>
+            <option value="active">Ativo</option>
+            <option value="draft">Rascunho</option>
+          </NativeSelect>
+        </div>
+      </div>
+      <div className="space-y-3 rounded-xl bg-muted/50 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-medium">Outras opções de preço</p>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-8"
+            onClick={() =>
+              setExtras((rows) =>
+                rows.length >= 5 ? rows : [...rows, { label: "", amount: "" }],
+              )
+            }
+          >
+            Adicionar preço
+          </Button>
+        </div>
+        {extras.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            O preço acima é o principal. Você pode acrescentar até cinco opções.
+          </p>
+        ) : (
+          extras.map((extra, index) => (
+            <div key={index} className="grid gap-2 sm:grid-cols-[1fr_140px_auto]">
+              <Input
+                aria-label="Nome da opção"
+                value={extra.label}
+                placeholder="Ex.: Mentoria de 4 semanas"
+                onChange={(event) =>
+                  setExtras((rows) =>
+                    rows.map((row, rowIndex) =>
+                      rowIndex === index ? { ...row, label: event.target.value } : row,
+                    ),
+                  )
+                }
+              />
+              <Input
+                aria-label="Valor da opção"
+                type="number"
+                min={1}
+                step="0.01"
+                value={extra.amount}
+                onChange={(event) =>
+                  setExtras((rows) =>
+                    rows.map((row, rowIndex) =>
+                      rowIndex === index ? { ...row, amount: event.target.value } : row,
+                    ),
+                  )
+                }
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10"
+                onClick={() => setExtras((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}
+              >
+                Remover
+              </Button>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="imageUrl">Imagem do produto</Label>
           <Input
             id="imageUrl"
             name="imageUrl"
@@ -104,21 +262,23 @@ export function ProductForm({ product }: { product?: ProductValues }) {
             placeholder="https://"
           />
         </div>
-      </div>
-      {editing ? (
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            name="active"
-            defaultChecked={product?.active ?? true}
-            className="size-4 accent-primary"
+        <div className="space-y-2">
+          <Label htmlFor="slug">URL personalizada</Label>
+          <Input
+            id="slug"
+            name="slug"
+            defaultValue={product?.slug}
+            placeholder="guia-de-luz"
           />
-          À venda na loja
-        </label>
-      ) : null}
+          <p className="text-xs text-muted-foreground">
+            O link copiável continua /checkout/id. O slug também abre essa página.
+          </p>
+        </div>
+      </div>
       <p className="text-xs text-muted-foreground">
-        Ao salvar, a thesain26 cria uma Checkout Configuration na Whop na conta
-        do vendedor, com a comissão da plataforma em application_fee_amount.
+        Ao salvar, a thesain26 cria a Checkout Configuration na Whop na conta do
+        vendedor, com a comissão em application_fee_amount, e guarda plan_id e
+        purchase_url. Rascunho fica fora da vitrine.
       </p>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex flex-wrap gap-2">

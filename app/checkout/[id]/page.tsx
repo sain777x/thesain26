@@ -16,7 +16,7 @@ async function findCheckoutProduct(id: string) {
     where: {
       active: true,
       store: { published: true },
-      OR: [{ id }, { whopPlanId: id }],
+      OR: [{ id }, { whopPlanId: id }, { slug: id }],
     },
     include: { store: true },
   });
@@ -35,25 +35,37 @@ export async function generateMetadata({
 
 export default async function CheckoutPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ preco?: string }>;
 }) {
   const { id } = await params;
+  const query = await searchParams;
   const product = await findCheckoutProduct(id);
   if (!product) notFound();
-  if (product.id !== id) redirect(`/checkout/${product.id}`);
+  if (product.id !== id) {
+    const preco = query.preco ? `?preco=${encodeURIComponent(query.preco)}` : "";
+    redirect(`/checkout/${product.id}${preco}`);
+  }
 
   let sessionId: string | null = null;
   let planId: string | null = product.whopPlanId;
   let purchaseUrl = product.whopPurchaseUrl;
   let checkoutError: string | null = null;
+  let amount = product.price;
+  let currency = product.currency;
+  let priceLabel: string | null = null;
 
-  if (product.whopPlanId) {
+  if (product.whopPlanId || query.preco) {
     try {
-      const opened = await openProductCheckout(product.id);
+      const opened = await openProductCheckout(product.id, query.preco);
       sessionId = opened.checkout.sessionId;
       planId = opened.checkout.planId;
       purchaseUrl = opened.checkout.purchaseUrl ?? purchaseUrl;
+      amount = opened.amount;
+      currency = opened.currency;
+      priceLabel = opened.priceLabel;
     } catch (error) {
       checkoutError = whopErrorMessage(error);
     }
@@ -66,7 +78,7 @@ export default async function CheckoutPage({
     : "#0f6e56";
   const origin = await requestOrigin();
   const returnUrl = `${origin}/loja/${product.store.slug}/obrigado?produto=${encodeURIComponent(product.name)}&checkout=${product.id}`;
-  const price = formatMoney(product.price, product.currency);
+  const price = formatMoney(amount, currency);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -121,6 +133,11 @@ export default async function CheckoutPage({
                 )}
                 <div className="min-w-0">
                   <p className="line-clamp-2 font-semibold">{product.name}</p>
+                  {product.subtitle || priceLabel ? (
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      {priceLabel || product.subtitle}
+                    </p>
+                  ) : null}
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     {product.store.name}
                   </p>

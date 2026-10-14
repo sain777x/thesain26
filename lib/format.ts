@@ -10,6 +10,36 @@ export function kycLabel(status: string) {
   return kycLabels[status] ?? status;
 }
 
+/** Rótulos do painel de verificações. */
+export function kycReviewLabel(status: string) {
+  if (status === "verified") return "Aprovado";
+  if (status === "rejected") return "Rejeitado";
+  if (status === "pending" || status === "action_required") return "Em análise";
+  return "Não iniciado";
+}
+
+/**
+ * Status da conta no painel, no vocabulário pedido para o vendedor.
+ * Suspensa vem da Whop (conta suspended) ou de um KYC recusado.
+ */
+export function sellerAccountLabel(kycStatus: string, accountStatus: string) {
+  if (accountStatus === "suspended" || kycStatus === "rejected") return "Suspensa";
+  if (kycStatus === "verified") return "Ativa";
+  if (kycStatus === "pending" || kycStatus === "action_required") return "Em análise";
+  return "Pendente KYC";
+}
+
+const saleStatusLabels: Record<string, string> = {
+  paid: "Paga",
+  pending: "Pendente",
+  failed: "Falhou",
+  refunded: "Reembolsada",
+};
+
+export function saleStatusLabel(status: string) {
+  return saleStatusLabels[status] ?? status;
+}
+
 export function formatMoney(amount: number, currency = "usd") {
   try {
     return new Intl.NumberFormat("pt-BR", {

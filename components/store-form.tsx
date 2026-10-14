@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { BUSINESS_TYPES, COUNTRIES, INDUSTRY_TYPES } from "@/lib/business";
+import { queueToast } from "@/components/toast";
+import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,18 +17,26 @@ type StoreValues = {
   primaryColor: string;
   accentColor: string;
   published: boolean;
+  website: string;
+  socialUrl: string;
+  instagram: string;
+  youtube: string;
+  linkedin: string;
+  businessType: string;
+  industryType: string;
+  country: string;
 };
 
 export function StoreForm({ store }: { store: StoreValues }) {
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
-    setSaved(false);
     setError(null);
+    setWarning(null);
     const form = new FormData(event.currentTarget);
     const response = await fetch("/api/store", {
       method: "PATCH",
@@ -38,15 +49,31 @@ export function StoreForm({ store }: { store: StoreValues }) {
         primaryColor: String(form.get("primaryColor") ?? ""),
         accentColor: String(form.get("accentColor") ?? ""),
         published: form.get("published") === "on",
+        website: String(form.get("website") ?? ""),
+        socialUrl: String(form.get("socialUrl") ?? ""),
+        instagram: String(form.get("instagram") ?? ""),
+        youtube: String(form.get("youtube") ?? ""),
+        linkedin: String(form.get("linkedin") ?? ""),
+        businessType: String(form.get("businessType") ?? ""),
+        industryType: String(form.get("industryType") ?? ""),
+        country: String(form.get("country") ?? "BR"),
       }),
     });
-    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    const data = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      whopWarning?: string | null;
+    };
     setPending(false);
     if (!response.ok) {
       setError(data.error ?? "Não foi possível salvar a loja.");
       return;
     }
-    setSaved(true);
+    if (data.whopWarning) {
+      setWarning(data.whopWarning);
+      queueToast("Loja salva. A Whop não confirmou a sincronização.");
+      return;
+    }
+    queueToast("Loja salva e sincronizada com a Whop.");
   }
 
   return (
@@ -68,17 +95,14 @@ export function StoreForm({ store }: { store: StoreValues }) {
           id="description"
           name="description"
           defaultValue={store.description}
+          maxLength={400}
           className="min-h-28"
         />
+        <p className="text-xs text-muted-foreground">Até 400 caracteres. Sincroniza com a Whop.</p>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="logoUrl">URL da logo</Label>
-        <Input
-          id="logoUrl"
-          name="logoUrl"
-          defaultValue={store.logoUrl}
-          placeholder="https://"
-        />
+        <Label htmlFor="logoUrl">Logo</Label>
+        <Input id="logoUrl" name="logoUrl" defaultValue={store.logoUrl} placeholder="https://" />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -102,6 +126,58 @@ export function StoreForm({ store }: { store: StoreValues }) {
           />
         </div>
       </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="website">Site</Label>
+          <Input id="website" name="website" defaultValue={store.website} placeholder="https://" />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="socialUrl">Rede principal</Label>
+          <Input id="socialUrl" name="socialUrl" defaultValue={store.socialUrl} placeholder="https://" />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="instagram">Instagram</Label>
+          <Input id="instagram" name="instagram" defaultValue={store.instagram} placeholder="https://" />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="youtube">YouTube</Label>
+          <Input id="youtube" name="youtube" defaultValue={store.youtube} placeholder="https://" />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="linkedin">LinkedIn</Label>
+          <Input id="linkedin" name="linkedin" defaultValue={store.linkedin} placeholder="https://" />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="country">País de operação</Label>
+          <NativeSelect id="country" name="country" defaultValue={store.country || "BR"}>
+            {COUNTRIES.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="businessType">Tipo de negócio</Label>
+          <NativeSelect id="businessType" name="businessType" defaultValue={store.businessType}>
+            {BUSINESS_TYPES.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="industryType">Tipo de indústria</Label>
+          <NativeSelect id="industryType" name="industryType" defaultValue={store.industryType}>
+            {INDUSTRY_TYPES.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+      </div>
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
@@ -112,7 +188,11 @@ export function StoreForm({ store }: { store: StoreValues }) {
         Loja publicada
       </label>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {saved ? <p className="text-sm text-primary">Loja atualizada.</p> : null}
+      {warning ? (
+        <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          Salvo na thesain26. A Whop respondeu: {warning}
+        </p>
+      ) : null}
       <Button type="submit" className="h-10" disabled={pending}>
         {pending ? "Salvando…" : "Salvar loja"}
       </Button>

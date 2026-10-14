@@ -17,6 +17,7 @@ export default async function EditarProdutoPage({
   const { id } = await params;
   const product = await prisma.product.findFirst({
     where: { id, sellerId: user.id },
+    include: { prices: { orderBy: { createdAt: "asc" } } },
   });
   if (!product) notFound();
   const checkoutUrl = checkoutShareUrl(await requestOrigin(), product.id);
@@ -49,10 +50,19 @@ export default async function EditarProdutoPage({
             product={{
               id: product.id,
               name: product.name,
+              subtitle: product.subtitle,
               description: product.description,
+              productType: product.productType,
+              deliveryMethod: product.deliveryMethod,
               price: product.price,
+              currency: product.currency,
               imageUrl: product.imageUrl ?? "",
-              active: product.active,
+              slug: product.slug ?? "",
+              status: product.status,
+              prices: product.prices.map((item) => ({
+                label: item.label,
+                amount: item.amount,
+              })),
             }}
           />
         </CardContent>

@@ -26,11 +26,11 @@ export async function POST(request: Request) {
     const origin = appUrl();
     const returnUrl =
       useCase === "account_onboarding"
-        ? `${origin}/painel?onboarding=return`
+        ? `${origin}/painel/verificacoes?onboarding=return`
         : `${origin}/painel/saldo?payouts=return`;
     const refreshUrl =
       useCase === "account_onboarding"
-        ? `${origin}/painel?onboarding=refresh`
+        ? `${origin}/painel/verificacoes?onboarding=refresh`
         : `${origin}/painel/saldo?payouts=refresh`;
 
     const url = await createAccountLink({

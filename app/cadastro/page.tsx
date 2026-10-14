@@ -27,8 +27,8 @@ export default async function CadastroPage() {
         </div>
         <p className="text-xs text-white/50">thesain26</p>
       </section>
-      <section className="flex flex-col justify-center px-6 py-16 sm:px-12">
-        <div className="mx-auto w-full max-w-sm">
+      <section className="flex flex-col justify-center overflow-y-auto px-6 py-16 sm:px-12">
+        <div className="mx-auto w-full max-w-xl">
           <div className="mb-8 lg:hidden">
             <Logo />
           </div>

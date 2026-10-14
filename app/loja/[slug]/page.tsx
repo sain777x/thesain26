@@ -20,7 +20,11 @@ export default async function LojaPublicaPage({
     where: { slug, published: true },
     include: {
       user: { select: { name: true, kycStatus: true } },
-      products: { where: { active: true }, orderBy: { createdAt: "desc" } },
+      products: {
+        where: { active: true },
+        orderBy: { createdAt: "desc" },
+        include: { prices: { orderBy: { createdAt: "asc" } } },
+      },
     },
   });
   if (!store) notFound();
@@ -56,9 +60,8 @@ export default async function LojaPublicaPage({
           ) : (
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {store.products.map((product) => (
-                <Link
+                <article
                   key={product.id}
-                  href={checkoutPath(product.id)}
                   className="flex h-full flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/10"
                 >
                   {product.imageUrl ? (
@@ -79,6 +82,9 @@ export default async function LojaPublicaPage({
                   <div className="flex flex-1 flex-col gap-4 p-4">
                     <div className="space-y-2">
                       <h2 className="text-2xl">{product.name}</h2>
+                      {product.subtitle ? (
+                        <p className="text-sm text-muted-foreground">{product.subtitle}</p>
+                      ) : null}
                       <p className="line-clamp-2 text-sm text-muted-foreground">
                         {product.description || "Entrega digital depois do pagamento."}
                       </p>
@@ -86,11 +92,28 @@ export default async function LojaPublicaPage({
                         {formatMoney(product.price, product.currency)}
                       </p>
                     </div>
-                    <span className={cn(buttonVariants({ size: "lg" }), "mt-auto h-10 w-full")}>
+                    <Link
+                      href={checkoutPath(product.id)}
+                      className={cn(buttonVariants({ size: "lg" }), "mt-auto h-10 w-full")}
+                    >
                       Comprar
-                    </span>
+                    </Link>
+                    {product.prices.length > 0 ? (
+                      <div className="space-y-1">
+                        {product.prices.map((option) => (
+                          <Link
+                            key={option.id}
+                            href={`${checkoutPath(product.id)}?preco=${option.id}`}
+                            className="block text-sm underline"
+                          >
+                            {option.label || "Outra opção"} ·{" "}
+                            {formatMoney(option.amount, option.currency)}
+                          </Link>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                </Link>
+                </article>
               ))}
             </div>
           )}

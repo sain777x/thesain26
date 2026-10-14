@@ -29,6 +29,14 @@ export default async function LojaEditorPage() {
               primaryColor: user.store.primaryColor,
               accentColor: user.store.accentColor,
               published: user.store.published,
+              website: user.store.website ?? "",
+              socialUrl: user.store.socialUrl ?? "",
+              instagram: user.store.instagram ?? "",
+              youtube: user.store.youtube ?? "",
+              linkedin: user.store.linkedin ?? "",
+              businessType: user.store.businessType,
+              industryType: user.store.industryType,
+              country: user.store.country,
             }}
           />
         </CardContent>

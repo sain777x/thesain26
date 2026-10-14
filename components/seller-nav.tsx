@@ -11,6 +11,7 @@ const links = [
   { href: "/painel/produtos", label: "Produtos" },
   { href: "/painel/vendas", label: "Vendas" },
   { href: "/painel/saldo", label: "Saldo e saques" },
+  { href: "/painel/verificacoes", label: "Verificações" },
 ];
 
 export function SellerNav({ storeSlug }: { storeSlug?: string | null }) {
@@ -18,7 +19,7 @@ export function SellerNav({ storeSlug }: { storeSlug?: string | null }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <nav className="flex gap-1 overflow-x-auto lg:flex-col">
+      <nav className="flex flex-wrap gap-1 lg:flex-col">
         {links.map((link) => {
           const active =
             link.href === "/painel"
@@ -29,7 +30,7 @@ export function SellerNav({ storeSlug }: { storeSlug?: string | null }) {
               key={link.href}
               href={link.href}
               className={cn(
-                "shrink-0 rounded-lg px-3 py-2 text-sm",
+                "rounded-lg px-3 py-2 text-sm",
                 active
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -42,13 +43,13 @@ export function SellerNav({ storeSlug }: { storeSlug?: string | null }) {
         {storeSlug ? (
           <Link
             href={`/loja/${storeSlug}`}
-            className="shrink-0 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             Ver loja pública
           </Link>
         ) : null}
       </nav>
-      <form action={signOutAction} className="hidden lg:block">
+      <form action={signOutAction}>
         <button
           type="submit"
           className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"

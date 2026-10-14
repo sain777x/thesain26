@@ -5,6 +5,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { checkoutShareUrl, requestOrigin } from "@/lib/checkout-link";
 import { requireSeller } from "@/lib/guards";
 import { prisma } from "@/lib/prisma";
+import { DELIVERY_METHODS, PRODUCT_TYPES, labelOf } from "@/lib/business";
 import { formatMoney } from "@/lib/format";
 import { cn } from "cn";
 
@@ -50,11 +51,16 @@ export default async function ProdutosPage() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium">{product.name}</p>
-                      <Badge variant={product.active ? "secondary" : "outline"}>
-                        {product.active ? "À venda" : "Pausado"}
+                      <Badge variant={product.status === "active" ? "secondary" : "outline"}>
+                        {product.status === "active" ? "Ativo" : "Rascunho"}
                       </Badge>
                     </div>
+                    {product.subtitle ? (
+                      <p className="mt-1 text-sm text-muted-foreground">{product.subtitle}</p>
+                    ) : null}
                     <p className="mt-1 text-sm text-muted-foreground">
+                      {labelOf(PRODUCT_TYPES, product.productType)} ·{" "}
+                      {labelOf(DELIVERY_METHODS, product.deliveryMethod)} ·{" "}
                       {formatMoney(product.price, product.currency)}
                       {product.applicationFeeAmount != null
                         ? ` · comissão ${formatMoney(product.applicationFeeAmount, product.currency)}`

@@ -1,17 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { appUrl } from "@/lib/app-url";
 import { HttpError, requireSeller, toErrorResponse } from "@/lib/guards";
 import { feePercentFor } from "@/lib/platform";
-import { createDirectChargeCheckout } from "@/lib/whop";
-
-const schema = z.object({
-  name: z.string().trim().min(2).max(80),
-  description: z.string().trim().max(4000),
-  price: z.number().min(1).max(10000),
-  imageUrl: z.string().trim().max(500).optional().or(z.literal("")),
-});
+import { productBodySchema, productStatus } from "@/lib/product-schema";
+import {
+  openSellerPlan,
+  saveExtraPrices,
+  uniqueProductSlug,
+} from "@/lib/product-checkout";
+import { whopErrorMessage } from "@/lib/whop";
 
 export async function POST(request: Request) {
   try {
@@ -24,39 +22,48 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = schema.parse(await request.json());
+    const body = productBodySchema.parse(await request.json());
     if (body.imageUrl && !/^https?:\/\//.test(body.imageUrl)) {
       throw new HttpError(400, "A imagem precisa ser uma URL http(s).");
     }
 
     const price = Math.round(body.price * 100) / 100;
+    const status = productStatus(body);
+    const slug = await uniqueProductSlug(body.slug);
     const feePercent = await feePercentFor(user);
     const product = await prisma.product.create({
       data: {
         storeId: user.store.id,
         sellerId: user.id,
         name: body.name,
+        subtitle: body.subtitle,
         description: body.description,
+        productType: body.productType,
+        deliveryMethod: body.deliveryMethod,
         price,
+        currency: body.currency,
         imageUrl: body.imageUrl || null,
-        currency: "usd",
+        slug,
+        status,
+        active: status === "active",
       },
     });
 
     try {
-      const checkout = await createDirectChargeCheckout({
+      // Direct Charge na conta do vendedor. O plan nasce com application_fee_amount.
+      const checkout = await openSellerPlan({
         accountId: user.whopBizId,
-        price,
-        feePercent,
-        title: body.name,
+        productId: product.id,
+        sellerId: user.id,
+        storeId: user.store.id,
+        storeSlug: user.store.slug,
+        name: body.name,
         description: body.description,
-        redirectUrl: `${appUrl()}/loja/${user.store.slug}/obrigado`,
-        metadata: {
-          platform: "thesain26",
-          product_id: product.id,
-          seller_id: user.id,
-          store_id: user.store.id,
-        },
+        price,
+        currency: body.currency,
+        feePercent,
+        productType: body.productType,
+        deliveryMethod: body.deliveryMethod,
       });
       const saved = await prisma.product.update({
         where: { id: product.id },
@@ -67,18 +74,39 @@ export async function POST(request: Request) {
           applicationFeeAmount: checkout.applicationFeeAmount,
         },
       });
-      return NextResponse.json({ product: saved });
+      const warnings = await saveExtraPrices(
+        {
+          accountId: user.whopBizId,
+          productId: product.id,
+          sellerId: user.id,
+          storeId: user.store.id,
+          storeSlug: user.store.slug,
+          name: body.name,
+          description: body.description,
+          price,
+          currency: body.currency,
+          feePercent,
+          productType: body.productType,
+          deliveryMethod: body.deliveryMethod,
+        },
+        body.prices,
+      );
+      return NextResponse.json({
+        product: saved,
+        whopWarning: warnings.length ? warnings.join(" ") : null,
+      });
     } catch (error) {
-      await prisma.product.delete({ where: { id: product.id } });
+      await prisma.product.delete({ where: { id: product.id } }).catch(() => undefined);
       throw error;
     }
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Nome, descrição e preço (mínimo US$ 1) são obrigatórios." },
+        { error: "Nome e preço (mínimo 1 na moeda escolhida) são obrigatórios." },
         { status: 400 },
       );
     }
+    console.error("[thesain26] product.create", whopErrorMessage(error));
     return toErrorResponse(error);
   }
 }

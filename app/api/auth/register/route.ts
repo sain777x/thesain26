@@ -1,16 +1,45 @@
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  BUSINESS_TYPES,
+  COUNTRIES,
+  INDUSTRY_TYPES,
+  normalizeHttpUrl,
+  splitPrimarySocial,
+} from "@/lib/business";
 import { prisma } from "@/lib/prisma";
 import { HttpError, toErrorResponse } from "@/lib/guards";
 import { isReservedSlug, slugify } from "@/lib/slug";
-import { createConnectedAccount, whopErrorMessage } from "@/lib/whop";
+import {
+  createConnectedAccount,
+  syncCompanyProfile,
+  whopErrorMessage,
+} from "@/lib/whop";
+
+const businessValues = BUSINESS_TYPES.map((item) => item.value) as [
+  (typeof BUSINESS_TYPES)[number]["value"],
+  ...(typeof BUSINESS_TYPES)[number]["value"][],
+];
+const industryValues = INDUSTRY_TYPES.map((item) => item.value) as [
+  (typeof INDUSTRY_TYPES)[number]["value"],
+  ...(typeof INDUSTRY_TYPES)[number]["value"][],
+];
+const countryValues = COUNTRIES.map((item) => item.code) as [
+  (typeof COUNTRIES)[number]["code"],
+  ...(typeof COUNTRIES)[number]["code"][],
+];
 
 const schema = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(8).max(72),
   storeName: z.string().trim().min(2).max(80),
+  description: z.string().trim().min(1).max(400),
+  socialUrl: z.string().trim().min(3).max(255),
+  businessType: z.enum(businessValues),
+  industryType: z.enum(industryValues),
+  country: z.enum(countryValues),
 });
 
 async function uniqueSlug(base: string) {
@@ -28,6 +57,12 @@ async function uniqueSlug(base: string) {
 export async function POST(request: Request) {
   try {
     const body = schema.parse(await request.json());
+    const primary = normalizeHttpUrl(body.socialUrl);
+    if (!primary) {
+      throw new HttpError(400, "Informe um site ou rede social com endereço válido.");
+    }
+    const channels = splitPrimarySocial(primary);
+
     const existing = await prisma.user.findUnique({
       where: { email: body.email },
     });
@@ -52,7 +87,11 @@ export async function POST(request: Request) {
           create: {
             name: body.storeName,
             slug,
-            description: "",
+            description: body.description,
+            country: body.country,
+            businessType: body.businessType,
+            industryType: body.industryType,
+            ...channels,
           },
         },
       },
@@ -61,16 +100,37 @@ export async function POST(request: Request) {
 
     let whopWarning: string | null = null;
     try {
-      // Connected Account criada no ato do cadastro e amarrada ao usuário.
+      // Connected Account no cadastro. Em seguida o perfil da empresa
+      // (descrição, país, site, tipo e indústria) segue por accounts.update.
       const bizId = await createConnectedAccount({
         email: user.email,
         title: body.storeName,
         externalId: user.id,
+        country: body.country,
+        website: channels.website,
       });
       await prisma.user.update({
         where: { id: user.id },
         data: { whopBizId: bizId },
       });
+      try {
+        await syncCompanyProfile(bizId, {
+          title: body.storeName,
+          businessName: body.storeName,
+          description: body.description,
+          country: body.country,
+          website: channels.website,
+          socialUrl: channels.socialUrl,
+          instagram: channels.instagram,
+          youtube: channels.youtube,
+          linkedin: channels.linkedin,
+          businessType: body.businessType,
+          industryType: body.industryType,
+        });
+      } catch (error) {
+        whopWarning = whopErrorMessage(error);
+        console.error("[thesain26] accounts.update", whopWarning);
+      }
     } catch (error) {
       whopWarning = whopErrorMessage(error);
       console.error("[thesain26] accounts.create", whopWarning);
@@ -85,7 +145,10 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Confira nome, email, senha (mínimo 8) e nome da loja." },
+        {
+          error:
+            "Confira nome, loja, email, senha (mínimo 8), descrição, site e país.",
+        },
         { status: 400 },
       );
     }
