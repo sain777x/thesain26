@@ -5,6 +5,16 @@ import { uploadPrivateFile } from "@/lib/verification-submit";
 const ALLOWED = new Set(["image/jpeg", "image/png", "application/pdf"]);
 const MAX_BYTES = 12 * 1024 * 1024;
 
+function contentType(file: File) {
+  if (file.type === "image/jpg") return "image/jpeg";
+  if (ALLOWED.has(file.type)) return file.type;
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+  if (name.endsWith(".png")) return "image/png";
+  if (name.endsWith(".pdf")) return "application/pdf";
+  return "";
+}
+
 export async function POST(request: Request) {
   try {
     const user = await requireSeller();
@@ -17,7 +27,8 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) {
       throw new HttpError(400, "Escolha um arquivo JPEG, PNG ou PDF.");
     }
-    if (!ALLOWED.has(file.type)) {
+    const type = contentType(file);
+    if (!type) {
       throw new HttpError(400, "Envie JPEG, PNG ou PDF.");
     }
     if (file.size <= 0 || file.size > MAX_BYTES) {
@@ -27,7 +38,7 @@ export async function POST(request: Request) {
     const name = file.name.replace(/[^\w.\- ]+/g, "").slice(0, 80) || "documento";
     const id = await uploadPrivateFile({
       name,
-      type: file.type,
+      type,
       bytes: Buffer.from(await file.arrayBuffer()),
     });
     return NextResponse.json({ id });

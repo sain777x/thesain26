@@ -12,7 +12,7 @@ const schema = z.object({
         id: z.string().regex(/^inrqi_[A-Za-z0-9]+$/),
         value: z.string().max(4000).optional(),
         values: z.array(z.string().max(200)).max(20).optional(),
-        files: z.array(fileId).max(8).optional(),
+        files: z.array(fileId).max(20).optional(),
         address: z
           .object({
             line1: z.string().max(200),

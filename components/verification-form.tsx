@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,10 @@ const ID_LABELS: Record<string, string> = {
   PASSPORT: "Passaporte",
   RESIDENCE_PERMIT: "Autorização de residência",
 };
+
+const MAX_FILES = 20;
+const MAX_BYTES = 12 * 1024 * 1024;
+const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "application/pdf"]);
 
 const ID_SLOTS: Record<string, { key: string; label: string }[]> = {
   PASSPORT: [{ key: "passport_front", label: "Página da foto" }],
@@ -56,6 +60,42 @@ function needsFiles(field: InformationField) {
   return field.type === "files" || field.type === "text_with_files";
 }
 
+function fileKey(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function acceptedFile(file: File) {
+  if (ALLOWED_TYPES.has(file.type) || file.type === "image/jpg") return true;
+  return /\.(jpe?g|png|pdf)$/i.test(file.name);
+}
+
+function formatSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function absorbFiles(current: File[], incoming: FileList | File[] | null) {
+  const next = [...current];
+  const rejected: string[] = [];
+  for (const file of incoming ?? []) {
+    if (next.length >= MAX_FILES) {
+      rejected.push(`Dá para enviar até ${MAX_FILES} arquivos neste pedido.`);
+      break;
+    }
+    if (!acceptedFile(file)) {
+      rejected.push(`${file.name} precisa ser JPEG, PNG ou PDF.`);
+      continue;
+    }
+    if (file.size <= 0 || file.size > MAX_BYTES) {
+      rejected.push(`${file.name} precisa ter até 12 MB.`);
+      continue;
+    }
+    if (next.some((item) => fileKey(item) === fileKey(file))) continue;
+    next.push(file);
+  }
+  return { next, notice: rejected[0] ?? null };
+}
+
 export function VerificationForm({
   verificationId,
   fields,
@@ -68,9 +108,11 @@ export function VerificationForm({
   const router = useRouter();
   const countries = listCountries();
   const [pending, setPending] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [idTypes, setIdTypes] = useState<Record<string, string>>({});
+  const [attachments, setAttachments] = useState<Record<string, File[]>>({});
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -125,10 +167,14 @@ export function VerificationForm({
           value: String(form.get(field.id) ?? ""),
         };
         if (needsFiles(field)) {
-          const picked = form.getAll(`${field.id}.files`).filter((item) => item instanceof File);
+          const picked = attachments[field.id] ?? [];
+          if (field.type === "files" && !field.optional && picked.length === 0) {
+            throw new Error(`Adicione pelo menos um arquivo em “${field.label}”.`);
+          }
           answer.files = [];
-          for (const file of picked) {
-            if (file.size > 0) answer.files.push(await sendFile(file));
+          for (const [index, file] of picked.entries()) {
+            setProgress(`Enviando arquivo ${index + 1} de ${picked.length}…`);
+            answer.files.push(await sendFile(file));
           }
         }
         answers.push(answer);
@@ -149,6 +195,7 @@ export function VerificationForm({
       setError(caught instanceof Error ? caught.message : "Não foi possível enviar.");
     } finally {
       setPending(false);
+      setProgress(null);
     }
   }
 
@@ -178,12 +225,19 @@ export function VerificationForm({
             countries={countries}
             idType={idTypes[field.id] || field.options?.[0] || "ID_CARD"}
             onIdType={(value) => setIdTypes((current) => ({ ...current, [field.id]: value }))}
+            files={attachments[field.id] ?? []}
+            onFiles={(next) =>
+              setAttachments((current) => ({
+                ...current,
+                [field.id]: next,
+              }))
+            }
           />
         </fieldset>
       ))}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <Button type="submit" className="h-10 px-4" disabled={pending}>
-        {pending ? "Enviando…" : label}
+        {pending ? progress ?? "Enviando…" : label}
       </Button>
     </form>
   );
@@ -194,11 +248,15 @@ function FieldControl({
   countries,
   idType,
   onIdType,
+  files,
+  onFiles,
 }: {
   field: InformationField;
   countries: { code: string; localName: string; flag: string }[];
   idType: string;
   onIdType: (value: string) => void;
+  files: File[];
+  onFiles: (files: File[]) => void;
 }) {
   if (field.type === "address") {
     return (
@@ -305,15 +363,7 @@ function FieldControl({
   }
 
   if (field.type === "files") {
-    return (
-      <Input
-        name={`${field.id}.files`}
-        type="file"
-        accept="image/jpeg,image/png,application/pdf"
-        multiple
-        required={!field.optional}
-      />
-    );
+    return <FileStack files={files} onChange={onFiles} />;
   }
 
   if (field.type === "date" || field.responseType === "date") {
@@ -339,9 +389,73 @@ function FieldControl({
   return (
     <div className="space-y-2">
       <Input id={field.id} name={field.id} required={!field.optional && field.type !== "text_with_files"} />
-      {field.type === "text_with_files" ? (
-        <Input name={`${field.id}.files`} type="file" accept="image/jpeg,image/png,application/pdf" multiple />
-      ) : null}
+      {field.type === "text_with_files" ? <FileStack files={files} onChange={onFiles} /> : null}
+    </div>
+  );
+}
+
+function FileStack({ files, onChange }: { files: File[]; onChange: (files: File[]) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  function add(incoming: FileList | File[] | null) {
+    const result = absorbFiles(files, incoming);
+    onChange(result.next);
+    setNotice(result.notice);
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  return (
+    <div className="space-y-2">
+      <label
+        className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed border-input px-4 py-5 text-center hover:bg-muted/40"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          add(event.dataTransfer.files);
+        }}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf"
+          multiple
+          className="sr-only"
+          onChange={(event) => add(event.target.files)}
+        />
+        <span className="text-sm font-medium">Adicionar arquivos</span>
+        <span className="text-xs text-muted-foreground">
+          Escolha vários de uma vez ou acrescente mais depois. Os que já estão na lista permanecem.
+        </span>
+      </label>
+      {files.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nenhum arquivo selecionado.</p>
+      ) : (
+        <ul className="space-y-1">
+          {files.map((file) => (
+            <li
+              key={fileKey(file)}
+              className="flex items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2 text-sm"
+            >
+              <span className="min-w-0 truncate">
+                {file.name}
+                <span className="ml-2 text-xs text-muted-foreground">{formatSize(file.size)}</span>
+              </span>
+              <button
+                type="button"
+                className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => onChange(files.filter((item) => fileKey(item) !== fileKey(file)))}
+              >
+                Remover
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {files.length} de {MAX_FILES} arquivos · JPEG, PNG ou PDF, até 12 MB cada
+      </p>
+      {notice ? <p className="text-sm text-destructive">{notice}</p> : null}
     </div>
   );
 }

@@ -101,7 +101,7 @@ export async function submitVerificationAnswers(params: {
     const item = open.get(answer.id)!;
     if (item.type === "files") {
       const files = fileIds(answer.files);
-      if (files.length === 0) throw new Error(`Envie o arquivo de “${item.label}”.`);
+      if (files.length === 0) throw new Error(`Envie pelo menos um arquivo de “${item.label}”.`);
       return { id: item.id, files };
     }
     if (item.type === "id_document") {

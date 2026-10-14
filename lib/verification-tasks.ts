@@ -162,7 +162,7 @@ function categoryFromText(text: string): TaskCategory {
 function answerHint(type: string) {
   switch (type) {
     case "files":
-      return "A Whop espera um arquivo.";
+      return "Envie um ou mais arquivos (JPEG, PNG ou PDF).";
     case "id_document":
       return "Envie o documento de identidade nos lados pedidos.";
     case "liveness":
