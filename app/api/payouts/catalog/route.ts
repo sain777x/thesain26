@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { HttpError, requireSeller, toErrorResponse } from "@/lib/guards";
-import { getPayoutFields, listPayoutCatalog } from "@/lib/payouts";
+import { getPayoutFields, isPayoutCurrency, listPayoutCatalog } from "@/lib/payouts";
 import { getAccountBalance } from "@/lib/whop";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +20,11 @@ export async function GET(request: Request) {
     const destination = (url.searchParams.get("destination") ?? "").toLowerCase();
 
     if (method) {
-      if (!method.startsWith("podst_") || !/^[a-z]{3}$/.test(destination)) {
+      if (!method.startsWith("podst_")) {
         throw new HttpError(400, "Método de pagamento inválido.");
+      }
+      if (!isPayoutCurrency(destination)) {
+        throw new HttpError(400, "Moeda de destino inválida.");
       }
       const fields = await getPayoutFields({
         accountId: user.whopBizId,

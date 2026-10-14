@@ -35,6 +35,11 @@ export function ProductForm({ product }: { product?: ProductValues }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [draft, setDraft] = useState(product);
+  const [formKey, setFormKey] = useState(0);
+  const [prompt, setPrompt] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [extras, setExtras] = useState<ExtraPrice[]>(
     product?.prices.map((item) => ({
       label: item.label,
@@ -42,6 +47,38 @@ export function ProductForm({ product }: { product?: ProductValues }) {
     })) ?? [],
   );
   const editing = Boolean(product?.id);
+
+  async function generate() {
+    setDrafting(true);
+    setDraftError(null);
+    try {
+      const response = await fetch("/api/products/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        product?: ProductValues;
+      };
+      if (!response.ok || !data.product) {
+        throw new Error(data.error ?? "Não foi possível montar o produto.");
+      }
+      setDraft({ ...data.product, id: product?.id });
+      setExtras(
+        (data.product.prices ?? []).map((item) => ({
+          label: item.label,
+          amount: String(item.amount),
+        })),
+      );
+      setFormKey((current) => current + 1);
+      queueToast("Produto montado. Revise o preço e crie.");
+    } catch (reason) {
+      setDraftError(reason instanceof Error ? reason.message : "Não foi possível montar o produto.");
+    } finally {
+      setDrafting(false);
+    }
+  }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -110,15 +147,34 @@ export function ProductForm({ product }: { product?: ProductValues }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
+    <div className="space-y-6">
+      <div className="space-y-3 rounded-xl border border-dashed p-4">
+        <div>
+          <p className="font-medium">Criar com IA</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Cole o texto do produto, com o preço. A IA preenche nome, descrição, tipo, entrega e o valor que estiver no texto.
+          </p>
+        </div>
+        <Textarea
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          placeholder="Mentoria de tráfego pago, 4 encontros de 1 hora, entrega por videochamada. Preço: R$ 497."
+          className="min-h-28"
+        />
+        {draftError ? <p className="text-sm text-destructive">{draftError}</p> : null}
+        <Button type="button" variant="outline" className="h-10" disabled={drafting || pending} onClick={generate}>
+          {drafting ? "Montando…" : "Montar produto"}
+        </Button>
+      </div>
+    <form key={formKey} onSubmit={onSubmit} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="name">Nome do produto</Label>
-          <Input id="name" name="name" defaultValue={product?.name} required />
+          <Input id="name" name="name" defaultValue={draft?.name} required />
         </div>
         <div className="space-y-2">
           <Label htmlFor="subtitle">Rótulo / subtítulo</Label>
-          <Input id="subtitle" name="subtitle" defaultValue={product?.subtitle} />
+          <Input id="subtitle" name="subtitle" defaultValue={draft?.subtitle} />
         </div>
       </div>
       <div className="space-y-2">
@@ -126,7 +182,7 @@ export function ProductForm({ product }: { product?: ProductValues }) {
         <Textarea
           id="description"
           name="description"
-          defaultValue={product?.description}
+          defaultValue={draft?.description}
           className="min-h-40"
         />
       </div>
@@ -136,7 +192,7 @@ export function ProductForm({ product }: { product?: ProductValues }) {
           <NativeSelect
             id="productType"
             name="productType"
-            defaultValue={product?.productType ?? "outro"}
+            defaultValue={draft?.productType ?? "outro"}
           >
             {PRODUCT_TYPES.map((item) => (
               <option key={item.value} value={item.value}>
@@ -150,7 +206,7 @@ export function ProductForm({ product }: { product?: ProductValues }) {
           <NativeSelect
             id="deliveryMethod"
             name="deliveryMethod"
-            defaultValue={product?.deliveryMethod ?? "manual"}
+            defaultValue={draft?.deliveryMethod ?? "manual"}
           >
             {DELIVERY_METHODS.map((item) => (
               <option key={item.value} value={item.value}>
@@ -169,13 +225,13 @@ export function ProductForm({ product }: { product?: ProductValues }) {
             type="number"
             min={1}
             step="0.01"
-            defaultValue={product?.price ?? 10}
+            defaultValue={draft?.price ?? 10}
             required
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor="currency">Moeda</Label>
-          <NativeSelect id="currency" name="currency" defaultValue={product?.currency ?? "usd"}>
+          <NativeSelect id="currency" name="currency" defaultValue={draft?.currency ?? "usd"}>
             {CURRENCIES.map((item) => (
               <option key={item.value} value={item.value}>
                 {item.label}
@@ -185,7 +241,7 @@ export function ProductForm({ product }: { product?: ProductValues }) {
         </div>
         <div className="space-y-2">
           <Label htmlFor="status">Status</Label>
-          <NativeSelect id="status" name="status" defaultValue={product?.status ?? "active"}>
+          <NativeSelect id="status" name="status" defaultValue={draft?.status ?? "active"}>
             <option value="active">Ativo</option>
             <option value="draft">Rascunho</option>
           </NativeSelect>
@@ -258,7 +314,7 @@ export function ProductForm({ product }: { product?: ProductValues }) {
           <Input
             id="imageUrl"
             name="imageUrl"
-            defaultValue={product?.imageUrl}
+            defaultValue={draft?.imageUrl}
             placeholder="https://"
           />
         </div>
@@ -267,7 +323,7 @@ export function ProductForm({ product }: { product?: ProductValues }) {
           <Input
             id="slug"
             name="slug"
-            defaultValue={product?.slug}
+            defaultValue={draft?.slug}
             placeholder="guia-de-luz"
           />
           <p className="text-xs text-muted-foreground">
@@ -298,5 +354,6 @@ export function ProductForm({ product }: { product?: ProductValues }) {
         ) : null}
       </div>
     </form>
+    </div>
   );
 }

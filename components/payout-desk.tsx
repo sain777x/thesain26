@@ -622,7 +622,7 @@ export function PayoutDesk({
                         </select>
                       ) : (
                         <input
-                          type={field.inputType === "date" ? "date" : field.sensitive ? "password" : "text"}
+                          type={field.inputType === "date" ? "date" : "text"}
                           autoComplete="off"
                           placeholder={field.placeholder ?? ""}
                           value={values[field.id] ?? ""}
@@ -640,7 +640,7 @@ export function PayoutDesk({
                     </p>
                   ) : null}
                   {fieldsError ? <p className="text-sm text-red-300">{fieldsError}</p> : null}
-                  <Button type="button" className="h-10 px-4" disabled={saving || catalogLoading} onClick={saveWallet}>
+                  <Button type="button" className="h-10 px-4" disabled={saving || catalogLoading || Boolean(fieldsError)} onClick={saveWallet}>
                     {saving ? "Salvando…" : "Salvar carteira"}
                   </Button>
                 </div>

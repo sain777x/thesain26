@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { HttpError, requireSeller, toErrorResponse } from "@/lib/guards";
-import { getPayoutFields, removePayoutMethod, savePayoutMethod, validatePayoutFields } from "@/lib/payouts";
+import {
+  getPayoutFields,
+  isPayoutCurrency,
+  removePayoutMethod,
+  savePayoutMethod,
+  validatePayoutFields,
+} from "@/lib/payouts";
 import { listPayoutMethods } from "@/lib/whop";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +31,7 @@ export async function POST(request: Request) {
     if (!/^[A-Z]{2}$/.test(country) || !supportedPayoutMethodId.startsWith("podst_")) {
       throw new HttpError(400, "Escolha o país e o método de pagamento.");
     }
-    if (!/^[a-z]{3}$/.test(destinationCurrency)) {
+    if (!isPayoutCurrency(destinationCurrency)) {
       throw new HttpError(400, "Moeda de destino inválida.");
     }
     const schema = await getPayoutFields({

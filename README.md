@@ -8,7 +8,7 @@ Marketplace de produtos digitais em cima da Whop (Whop for Platforms). Vendedore
 - KYC em `/painel/verificacoes`, com Account Link (`use_case: account_onboarding`) e a sessão da Whop quando ela devolve um link.
 - Saldo, reserva, carteiras e saque na própria página `/painel/saldo`, sem sair do site. O admin vê pendente do dia seguinte, reservas de 14 e 30 dias, e o que já foi sacado.
 - Vendas listadas ao abrir a página (webhook em tempo real e sincronização de fallback), com filtro e CSV.
-- Loja, produtos e checkout embutido (`WhopCheckoutEmbed`).
+- Loja, produtos e checkout embutido (`WhopCheckoutEmbed`). Em novo produto, um texto com o preço monta nome, descrição, tipo e valor pela IA (`XAI_API_KEY`).
 - Webhook em `/api/webhooks/whop` para registrar pagamentos.
 - Painel do dono com vendedores, status de KYC, vendas e total de comissões.
 

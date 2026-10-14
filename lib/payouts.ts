@@ -49,6 +49,11 @@ export type SellerTreasury = {
 
 const OPEN_PAYOUT = new Set(["requested", "in_review", "processing"]);
 
+/** Fiat (usd, brl) e cripto (btc, eth, usdc, usdt). Não limita a 3 letras. */
+export function isPayoutCurrency(value: string) {
+  return /^[a-z0-9][a-z0-9_]{1,19}$/.test(value);
+}
+
 function moneyAmount(value: { amount: string } | number | string | null | undefined) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value === "string") {
