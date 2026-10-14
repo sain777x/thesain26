@@ -17,8 +17,12 @@ const ID_LABELS: Record<string, string> = {
 };
 
 const MAX_FILES = 20;
-const MAX_BYTES = 12 * 1024 * 1024;
-const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "application/pdf"]);
+const DOCUMENT_BYTES = 32 * 1024 * 1024;
+const VIDEO_BYTES = 100 * 1024 * 1024;
+const DOCUMENT_TYPES = new Set(["image/jpeg", "image/png", "application/pdf"]);
+const VIDEO_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm", "video/x-m4v"]);
+const FILE_ACCEPT =
+  "image/jpeg,image/png,application/pdf,video/mp4,video/quicktime,video/webm,.jpg,.jpeg,.png,.pdf,.mp4,.mov,.m4v,.webm";
 
 const ID_SLOTS: Record<string, { key: string; label: string }[]> = {
   PASSPORT: [{ key: "passport_front", label: "Página da foto" }],
@@ -64,9 +68,14 @@ function fileKey(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}`;
 }
 
-function acceptedFile(file: File) {
-  if (ALLOWED_TYPES.has(file.type) || file.type === "image/jpg") return true;
-  return /\.(jpe?g|png|pdf)$/i.test(file.name);
+function fileKind(file: File) {
+  const type = file.type.toLowerCase();
+  const name = file.name.toLowerCase();
+  if (DOCUMENT_TYPES.has(type) || type === "image/jpg" || /\.(jpe?g|png|pdf)$/.test(name)) {
+    return "document" as const;
+  }
+  if (VIDEO_TYPES.has(type) || /\.(mp4|mov|m4v|webm)$/.test(name)) return "video" as const;
+  return null;
 }
 
 function formatSize(bytes: number) {
@@ -82,12 +91,18 @@ function absorbFiles(current: File[], incoming: FileList | File[] | null) {
       rejected.push(`Dá para enviar até ${MAX_FILES} arquivos neste pedido.`);
       break;
     }
-    if (!acceptedFile(file)) {
-      rejected.push(`${file.name} precisa ser JPEG, PNG ou PDF.`);
+    const kind = fileKind(file);
+    if (!kind) {
+      rejected.push(`${file.name} precisa ser JPEG, PNG, PDF ou vídeo (MP4, MOV ou WEBM).`);
       continue;
     }
-    if (file.size <= 0 || file.size > MAX_BYTES) {
-      rejected.push(`${file.name} precisa ter até 12 MB.`);
+    const limit = kind === "video" ? VIDEO_BYTES : DOCUMENT_BYTES;
+    if (file.size <= 0 || file.size > limit) {
+      rejected.push(
+        kind === "video"
+          ? `${file.name} passa de 100 MB. Envie um vídeo menor.`
+          : `${file.name} precisa ter até 32 MB.`,
+      );
       continue;
     }
     if (next.some((item) => fileKey(item) === fileKey(file))) continue;
@@ -338,7 +353,7 @@ function FieldControl({
         {slots.map((slot) => (
           <label key={slot.key} className="block text-sm">
             <span className="mb-1 block text-muted-foreground">{slot.label}</span>
-            <Input name={`${field.id}.${slot.key}`} type="file" accept="image/jpeg,image/png,application/pdf" />
+            <Input name={`${field.id}.${slot.key}`} type="file" accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf" />
           </label>
         ))}
       </div>
@@ -418,14 +433,14 @@ function FileStack({ files, onChange }: { files: File[]; onChange: (files: File[
         <input
           ref={inputRef}
           type="file"
-          accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf"
+          accept={FILE_ACCEPT}
           multiple
           className="sr-only"
           onChange={(event) => add(event.target.files)}
         />
         <span className="text-sm font-medium">Adicionar arquivos</span>
         <span className="text-xs text-muted-foreground">
-          Escolha vários de uma vez ou acrescente mais depois. Os que já estão na lista permanecem.
+          Escolha vários de uma vez ou acrescente mais depois. Vídeo MP4 entra junto com as fotos.
         </span>
       </label>
       {files.length === 0 ? (
@@ -453,7 +468,7 @@ function FileStack({ files, onChange }: { files: File[]; onChange: (files: File[
         </ul>
       )}
       <p className="text-xs text-muted-foreground">
-        {files.length} de {MAX_FILES} arquivos · JPEG, PNG ou PDF, até 12 MB cada
+        {files.length} de {MAX_FILES} arquivos · JPEG, PNG, PDF até 32 MB · vídeo MP4, MOV ou WEBM até 100 MB
       </p>
       {notice ? <p className="text-sm text-destructive">{notice}</p> : null}
     </div>

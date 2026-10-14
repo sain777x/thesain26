@@ -162,7 +162,7 @@ function categoryFromText(text: string): TaskCategory {
 function answerHint(type: string) {
   switch (type) {
     case "files":
-      return "Envie um ou mais arquivos (JPEG, PNG ou PDF).";
+      return "Envie fotos, PDF ou um vídeo (MP4, MOV ou WEBM).";
     case "id_document":
       return "Envie o documento de identidade nos lados pedidos.";
     case "liveness":
