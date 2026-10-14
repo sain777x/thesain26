@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Vendedor da thesain26 ou o dono da plataforma.
+/// whopBizId é o id da Connected Account (biz_...) criada na Whop.
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  passwordHash       String
+  name               String
+  role               String    @default("seller")
+  whopBizId          String?   @unique
+  kycStatus          String    @default("not_started")
+  kycDetail          String?
+  kycCheckedAt       DateTime?
+  feePercentOverride Float?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  store    Store?
+  products Product[]
+  sales    Sale[]
+}
+
+model Store {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  slug         String   @unique
+  description  String   @default("")
+  logoUrl      String?
+  primaryColor String   @default("#16382c")
+  accentColor  String   @default("#0f6e56")
+  published    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  products Product[]
+}
+
+model Product {
+  id                   String   @id @default(cuid())
+  storeId              String
+  store                Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sellerId             String
+  seller               User     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  name                 String
+  description          String   @default("")
+  price                Float
+  currency             String   @default("usd")
+  imageUrl             String?
+  whopPlanId           String?
+  whopCheckoutId       String?
+  whopPurchaseUrl      String?
+  applicationFeeAmount Float?
+  active               Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  sales Sale[]
+}
+
+/// Venda registrada pelo webhook da Whop (ou pela sincronização manual).
+model Sale {
+  id             String   @id @default(cuid())
+  whopPaymentId  String   @unique
+  sellerId       String?
+  seller         User?    @relation(fields: [sellerId], references: [id])
+  productId      String?
+  product        Product? @relation(fields: [productId], references: [id])
+  buyerEmail     String?
+  amount         Float
+  applicationFee Float    @default(0)
+  currency       String   @default("usd")
+  status         String
+  whopAccountId  String?
+  createdAt      DateTime @default(now())
+}
+
+model PlatformSettings {
+  id         String @id @default("platform")
+  feePercent Float  @default(5)
+  name       String @default("thesain26")
+}
+
+/// Idempotência dos webhooks (o header webhook-id).
+model WebhookEvent {
+  id        String   @id
+  type      String
+  createdAt DateTime @default(now())
+}
