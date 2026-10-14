@@ -1,16 +1,15 @@
 import Link from "next/link";
-import { redirect, unstable_rethrow } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AccountLinkButton } from "@/components/account-link-button";
+import { VerificationForm } from "@/components/verification-form";
 import { ReloadAction } from "@/components/reload-action";
 import { appUrl } from "@/lib/app-url";
 import { kycReviewLabel } from "@/lib/format";
 import { requireSeller } from "@/lib/guards";
 import { prisma } from "@/lib/prisma";
 import {
-  createAccountLink,
   listVerificationTasks,
+  openVerificationSession,
   syncKycStatus,
   whopErrorMessage,
 } from "@/lib/whop";
@@ -24,34 +23,66 @@ import { cn } from "cn";
 
 export const dynamic = "force-dynamic";
 
-function TaskResolve({ task }: { task: VerificationTask }) {
-  if (task.resolve.kind === "account_link") {
+function TaskResolve({
+  task,
+  sessionUrl,
+}: {
+  task: VerificationTask;
+  sessionUrl: string | null;
+}) {
+  if (task.resolve.kind === "form") {
     return (
-      <AccountLinkButton useCase={task.resolve.useCase}>
-        {task.resolve.label}
-      </AccountLinkButton>
+      <VerificationForm
+        verificationId={task.resolve.verificationId}
+        fields={task.resolve.fields}
+        label={task.resolve.label}
+      />
+    );
+  }
+  if (task.resolve.kind === "session") {
+    if (!sessionUrl) {
+      return (
+        <p className="text-sm text-muted-foreground">
+          Não foi possível abrir o formulário agora. Atualize a página e tente de novo.
+        </p>
+      );
+    }
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Preencha aqui mesmo. Não precisa entrar na Whop nem sair da thesain26.
+        </p>
+        <iframe
+          title={task.title}
+          src={sessionUrl}
+          allow="camera; microphone; fullscreen"
+          className="h-[760px] w-full rounded-xl border bg-white"
+        />
+        <a href={`/painel/verificacoes?tarefa=${encodeURIComponent(task.id)}`} className="text-sm underline">
+          Já enviei, atualizar status
+        </a>
+      </div>
     );
   }
   if (task.resolve.kind === "url") {
+    const external = task.resolve.url.startsWith("http");
     return (
       <div className="space-y-3">
-        <a
-          href={task.resolve.url}
-          className="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm text-primary-foreground"
-        >
-          {task.resolve.label}
-        </a>
         {task.resolve.embed ? (
           <iframe
             title={task.title}
             src={task.resolve.url}
-            className="h-[640px] w-full rounded-xl border bg-card"
+            allow="camera; microphone"
+            className="h-[640px] w-full rounded-xl border bg-white"
           />
         ) : (
-          <p className="text-sm text-muted-foreground">
-            Esta etapa abre no fluxo oficial da Whop. Quando terminar, volte para
-            esta página para atualizar o status.
-          </p>
+          <a
+            href={task.resolve.url}
+            className="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm text-primary-foreground"
+            {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
+          >
+            {task.resolve.label}
+          </a>
         )}
       </div>
     );
@@ -62,27 +93,15 @@ function TaskResolve({ task }: { task: VerificationTask }) {
 export default async function VerificacoesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ onboarding?: string; tarefa?: string }>;
+  searchParams: Promise<{ tarefa?: string }>;
 }) {
   const query = await searchParams;
   let user = await requireSeller();
   let error: string | null = null;
   let tasks: VerificationTask[] = [];
 
-  if (query.onboarding === "refresh" && user.whopBizId) {
-    try {
-      const url = await createAccountLink({
-        accountId: user.whopBizId,
-        useCase: "account_onboarding",
-        returnUrl: `${appUrl()}/painel/verificacoes?onboarding=return`,
-        refreshUrl: `${appUrl()}/painel/verificacoes?onboarding=refresh`,
-      });
-      redirect(url);
-    } catch (caught) {
-      unstable_rethrow(caught);
-      error = whopErrorMessage(caught);
-    }
-  }
+  const returnUrl = `${appUrl()}/verificacao/retorno`;
+  const refreshUrl = `${appUrl()}/painel/verificacoes?onboarding=refresh`;
 
   const bizId = user.whopBizId;
   if (bizId) {
@@ -108,6 +127,19 @@ export default async function VerificacoesPage({
   const selected =
     tasks.find((task) => task.id === query.tarefa) ?? null;
   const label = kycReviewLabel(user.kycStatus);
+  let sessionUrl: string | null = null;
+  if (selected?.resolve.kind === "session" && user.whopBizId) {
+    try {
+      sessionUrl = await openVerificationSession({
+        accountId: user.whopBizId,
+        kind: selected.resolve.kindHint,
+        returnUrl,
+        refreshUrl,
+      });
+    } catch (caught) {
+      error = error ?? whopErrorMessage(caught);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -205,7 +237,7 @@ export default async function VerificacoesPage({
                       {selected.blocked.map(capabilityLabel).join(", ")}.
                     </p>
                   ) : null}
-                  <TaskResolve task={selected} />
+                  <TaskResolve task={selected} sessionUrl={sessionUrl} />
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">

@@ -82,6 +82,17 @@ function activityValue(row: {
   return raw / precision;
 }
 
+function missingPayoutSetup(error: unknown) {
+  return /no payout setup/i.test(whopErrorMessage(error));
+}
+
+async function platformAccountId(accountId: string) {
+  const account = await getWhop().accounts.retrieve({ id: accountId });
+  const parent = account.parent_account?.id;
+  if (!parent || parent === accountId) return null;
+  return parent;
+}
+
 async function collectSupported(params: {
   accountId: string;
   country?: string;
@@ -114,8 +125,16 @@ export async function listPayoutCatalog(params: {
   country: string;
   amount: number;
   currency: string;
-}): Promise<CatalogMethod[]> {
-  const items = await collectSupported(params);
+}): Promise<{ methods: CatalogMethod[]; setupRequired: boolean }> {
+  let items = await collectSupported(params);
+  let setupRequired = false;
+  if (items.length === 0) {
+    const parentId = await platformAccountId(params.accountId).catch(() => null);
+    if (parentId) {
+      items = await collectSupported({ ...params, accountId: parentId });
+      setupRequired = items.length > 0;
+    }
+  }
   const rows: CatalogMethod[] = [];
   for (const item of items) {
     const quotes = item.quotes ?? [];
@@ -148,7 +167,7 @@ export async function listPayoutCatalog(params: {
       });
     }
   }
-  return rows;
+  return { methods: rows, setupRequired };
 }
 
 export async function getPayoutFields(params: {
@@ -157,12 +176,28 @@ export async function getPayoutFields(params: {
   supportedPayoutMethodId: string;
   destinationCurrency: string;
 }): Promise<PayoutField[]> {
-  const items = await collectSupported({
-    accountId: params.accountId,
-    country: params.country,
-    supportedPayoutMethodId: params.supportedPayoutMethodId,
-    destinationCurrency: params.destinationCurrency,
-  });
+  let items: Awaited<ReturnType<typeof collectSupported>> = [];
+  try {
+    items = await collectSupported({
+      accountId: params.accountId,
+      country: params.country,
+      supportedPayoutMethodId: params.supportedPayoutMethodId,
+      destinationCurrency: params.destinationCurrency,
+    });
+  } catch (error) {
+    if (!missingPayoutSetup(error)) throw error;
+  }
+  if (!items.some((item) => item.required_fields?.length)) {
+    const parentId = await platformAccountId(params.accountId).catch(() => null);
+    if (parentId) {
+      items = await collectSupported({
+        accountId: parentId,
+        country: params.country,
+        supportedPayoutMethodId: params.supportedPayoutMethodId,
+        destinationCurrency: params.destinationCurrency,
+      });
+    }
+  }
   const match =
     items.find((item) => item.id === params.supportedPayoutMethodId) ?? items[0];
   return (match?.required_fields ?? []).map((field) => ({
@@ -211,18 +246,27 @@ export async function savePayoutMethod(params: {
   isDefault: boolean;
 }) {
   const client = getWhop();
-  const created = await client.payouts.methods.create(
-    {
-      account_id: params.accountId,
-      supported_payout_method_id: params.supportedPayoutMethodId,
-      destination_currency: params.destinationCurrency,
-      nickname: params.nickname.slice(0, 80),
-      fields: params.fields,
-      is_default: params.isDefault,
-    },
-    { idempotencyKey: crypto.randomUUID() },
-  );
-  return created.id;
+  try {
+    const created = await client.payouts.methods.create(
+      {
+        account_id: params.accountId,
+        supported_payout_method_id: params.supportedPayoutMethodId,
+        destination_currency: params.destinationCurrency,
+        nickname: params.nickname.slice(0, 80),
+        fields: params.fields,
+        is_default: params.isDefault,
+      },
+      { idempotencyKey: crypto.randomUUID() },
+    );
+    return created.id;
+  } catch (error) {
+    if (missingPayoutSetup(error)) {
+      throw new Error(
+        "A Whop ainda não abriu o saque desta conta. Conclua a verificação em Verificações e adicione a carteira de novo.",
+      );
+    }
+    throw error;
+  }
 }
 
 export async function removePayoutMethod(id: string) {

@@ -37,13 +37,18 @@ export async function GET(request: Request) {
 
     const balance = await getAccountBalance(user.whopBizId).catch(() => null);
     const amount = balance && balance.available >= 1 ? balance.available : 100;
-    const methods = await listPayoutCatalog({
+    const catalog = await listPayoutCatalog({
       accountId: user.whopBizId,
       country,
       amount,
       currency: balance?.currency ?? "usd",
     });
-    return NextResponse.json({ methods, previewAmount: amount, currency: balance?.currency ?? "usd" });
+    return NextResponse.json({
+      methods: catalog.methods,
+      setupRequired: catalog.setupRequired,
+      previewAmount: amount,
+      currency: balance?.currency ?? "usd",
+    });
   } catch (error) {
     return toErrorResponse(error);
   }

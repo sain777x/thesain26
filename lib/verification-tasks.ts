@@ -7,6 +7,20 @@
 export type TaskCategory = "kyc" | "proof" | "payout" | "extra";
 export type TaskStatus = "not_started" | "required" | "pending" | "done";
 
+export type InformationField = {
+  id: string;
+  label: string;
+  requirement: string;
+  type: string;
+  optional?: boolean;
+  options?: string[];
+  responseType?: string | null;
+  selectionMode?: "single" | "multiple" | null;
+  detailsLabel?: string | null;
+  actionUrl?: string | null;
+  errors?: string[];
+};
+
 export type VerificationTask = {
   id: string;
   title: string;
@@ -17,8 +31,14 @@ export type VerificationTask = {
   blocked: string[];
   resolve:
     | {
-        kind: "account_link";
-        useCase: "account_onboarding" | "payouts_portal";
+        kind: "session";
+        kindHint: "business" | "individual";
+        label: string;
+      }
+    | {
+        kind: "form";
+        verificationId: string;
+        fields: InformationField[];
         label: string;
       }
     | { kind: "url"; url: string; embed: boolean; label: string }
@@ -35,15 +55,8 @@ export type RequiredActionInput = {
   blocked: string[];
 };
 
-export type InformationInput = {
-  id: string;
-  label: string;
-  requirement: string;
-  type: string;
-  actionUrl?: string | null;
-  optional?: boolean;
-  errors?: string[];
-  detailsLabel?: string;
+export type InformationInput = InformationField & {
+  verificationId: string;
 };
 
 export type DocumentInput = {
@@ -76,6 +89,10 @@ export function capabilityLabel(value: string) {
     payouts: "saques",
     payments: "pagamentos",
     checkout: "checkout",
+    standard_payout: "saque padrão",
+    instant_payout: "saque instantâneo",
+    crypto_payout: "saque em cripto",
+    transfer: "transferência",
   };
   return known[value] ?? value.replaceAll("_", " ");
 }
@@ -104,8 +121,22 @@ export function httpsUrl(value: string | null | undefined) {
   }
 }
 
+/** Painel da Whop exige login e, sem sessão, cai na página de marketing. */
+export function isWhopDashboardUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (!/(^|\.)whop\.com$/i.test(url.hostname)) return false;
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    if (path === "/" || path === "/pt") return true;
+    return /\/dashboard(?:\/|$)|\/settings\/verifications|\/home$/.test(path);
+  } catch {
+    return false;
+  }
+}
+
 function embeddable(url: string) {
-  return /sumsub|verif|identity|onboarding|kyc/i.test(url);
+  if (isWhopDashboardUrl(url)) return false;
+  return /sumsub|verify-identity|identity|onboarding|kyc/i.test(url);
 }
 
 function categoryFromText(text: string): TaskCategory {
@@ -170,9 +201,9 @@ function actionFallback(action: string) {
       category: "kyc",
     },
     submit_information_request: {
-      title: "Informação adicional",
+      title: "Informações do negócio",
       description:
-        "A Whop pediu um documento ou uma resposta. Pode ser prova de vendas, extrato ou outro comprovante.",
+        "A análise pediu dados atualizados do negócio. Preencha o formulário nesta página. Enquanto o pedido estiver aberto, os saques ficam pausados. As vendas continuam.",
       category: "extra",
     },
     update_payout_profile: {
@@ -205,6 +236,13 @@ function actionFallback(action: string) {
   );
 }
 
+function sessionResolve(
+  kindHint: "business" | "individual",
+  label: string,
+): VerificationTask["resolve"] {
+  return { kind: "session", kindHint, label };
+}
+
 function resolveAction(
   action: string,
   category: TaskCategory,
@@ -212,21 +250,22 @@ function resolveAction(
   ctaLabel: string,
 ): VerificationTask["resolve"] {
   const url = httpsUrl(cta);
-  if (action === "verify_identity" || (category === "kyc" && !url)) {
+  const dashboard = Boolean(url && isWhopDashboardUrl(url));
+  if (action === "submit_information_request") {
+    return sessionResolve("business", "Adicionar informações");
+  }
+  if (action === "verify_identity" || category === "kyc") {
+    return sessionResolve("individual", ctaLabel || "Resolver KYC");
+  }
+  if (category === "payout" && (!url || dashboard)) {
     return {
-      kind: "account_link",
-      useCase: "account_onboarding",
-      label: ctaLabel || "Resolver KYC",
+      kind: "url",
+      url: "/painel/saldo",
+      embed: false,
+      label: "Resolver em Saldo e saques",
     };
   }
-  if (category === "payout" && !url) {
-    return {
-      kind: "account_link",
-      useCase: "payouts_portal",
-      label: ctaLabel || "Abrir saques",
-    };
-  }
-  if (url) {
+  if (url && !dashboard) {
     return {
       kind: "url",
       url,
@@ -234,11 +273,7 @@ function resolveAction(
       label: ctaLabel || "Resolver esta tarefa",
     };
   }
-  return {
-    kind: "account_link",
-    useCase: category === "payout" ? "payouts_portal" : "account_onboarding",
-    label: ctaLabel || "Abrir na Whop",
-  };
+  return sessionResolve("business", ctaLabel || "Continuar verificação");
 }
 
 export function buildVerificationTasks(input: {
@@ -253,14 +288,20 @@ export function buildVerificationTasks(input: {
   for (const [index, action] of input.requiredActions.entries()) {
     if (action.action === "submit_information_request" && hasInformation) continue;
     const fallback = actionFallback(action.action);
-    const category = action.title
-      ? categoryFromText(`${action.action} ${action.title} ${action.description}`)
-      : fallback.category;
+    const category =
+      action.action === "submit_information_request"
+        ? fallback.category
+        : action.title
+          ? categoryFromText(`${action.action} ${action.title} ${action.description}`)
+          : fallback.category;
     const status: TaskStatus = action.status === "pending" ? "pending" : "required";
+    const genericRequest = action.action === "submit_information_request";
     tasks.push({
       id: `action-${action.action}-${index}`,
-      title: action.title.trim() || fallback.title,
-      description: action.description.trim() || fallback.description,
+      title: genericRequest ? fallback.title : action.title.trim() || fallback.title,
+      description: genericRequest
+        ? fallback.description
+        : action.description.trim() || fallback.description,
       category: action.action === "verify_identity" ? "kyc" : category,
       status,
       details: [],
@@ -274,35 +315,53 @@ export function buildVerificationTasks(input: {
     });
   }
 
+  const groups = new Map<string, InformationInput[]>();
   for (const item of input.information) {
-    const category = categoryFromText(`${item.requirement} ${item.label} ${item.type}`);
-    const url = httpsUrl(item.actionUrl);
-    const errors = (item.errors ?? []).filter(Boolean);
+    if (!item.verificationId) continue;
+    const current = groups.get(item.verificationId) ?? [];
+    current.push(item);
+    groups.set(item.verificationId, current);
+  }
+
+  for (const [verificationId, items] of groups) {
+    const text = items.map((item) => `${item.requirement} ${item.label} ${item.type}`).join(" ");
+    const category = categoryFromText(text);
+    const single = items.length === 1 ? items[0] : null;
     tasks.push({
-      id: `info-${item.id}`,
-      title: item.label.trim() || requirementLabel(item.requirement),
-      description: item.optional
-        ? "A Whop marcou este pedido como opcional."
-        : "A Whop pediu esta informação antes de seguir com a conta.",
+      id: `info-${verificationId}`,
+      title: single?.label.trim() || "Informações da análise",
+      description: single?.optional
+        ? "Este pedido é opcional. A resposta fica nesta página."
+        : "Responda nesta página. O envio segue para a análise sem abrir a Whop.",
       category,
       status: "required",
-      details: [
-        `Pedido: ${requirementLabel(item.requirement)}`,
-        answerHint(item.type),
-        item.detailsLabel?.trim() || "",
-        ...errors.map((error) => `Recusado: ${error}`),
-      ].filter(Boolean),
+      details: items.flatMap((item) =>
+        [
+          items.length > 1 ? item.label.trim() : `Pedido: ${requirementLabel(item.requirement)}`,
+          answerHint(item.type),
+          item.detailsLabel?.trim() || "",
+          ...(item.errors ?? []).filter(Boolean).map((error) => `Recusado: ${error}`),
+        ].filter(Boolean),
+      ),
       blocked: [],
-      resolve: url
-        ? {
-            kind: "url",
-            url,
-            embed: embeddable(url) || item.type === "liveness",
-            label: "Resolver esta tarefa",
-          }
-        : category === "payout"
-          ? { kind: "account_link", useCase: "payouts_portal", label: "Resolver no portal de saques" }
-          : { kind: "account_link", useCase: "account_onboarding", label: "Resolver na verificação" },
+      resolve: {
+        kind: "form",
+        verificationId,
+        label: "Enviar informações",
+        fields: items.map((item) => ({
+          id: item.id,
+          label: item.label,
+          requirement: item.requirement,
+          type: item.type,
+          optional: item.optional,
+          options: item.options,
+          responseType: item.responseType,
+          selectionMode: item.selectionMode,
+          detailsLabel: item.detailsLabel,
+          actionUrl: httpsUrl(item.actionUrl),
+          errors: item.errors,
+        })),
+      },
     });
   }
 
@@ -317,9 +376,10 @@ export function buildVerificationTasks(input: {
       status: "required",
       details: document.rejectionReason ? [`Recusado: ${document.rejectionReason}`] : [],
       blocked: [],
-      resolve: url
-        ? { kind: "url", url, embed: true, label: "Enviar documento" }
-        : { kind: "account_link", useCase: "account_onboarding", label: "Enviar na verificação" },
+      resolve:
+        url && !isWhopDashboardUrl(url)
+          ? { kind: "url", url, embed: embeddable(url), label: "Enviar documento" }
+          : sessionResolve("individual", "Enviar na verificação"),
     });
   }
 
@@ -339,11 +399,7 @@ export function buildVerificationTasks(input: {
           : "not_started",
       details: [],
       blocked: ["Saques ficam bloqueados até a Whop aprovar a identidade."],
-      resolve: {
-        kind: "account_link",
-        useCase: "account_onboarding",
-        label: "Resolver KYC",
-      },
+      resolve: sessionResolve("individual", "Resolver KYC"),
     });
   }
 

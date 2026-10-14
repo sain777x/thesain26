@@ -166,6 +166,27 @@ export async function createAccountLink(params: {
   return link.url;
 }
 
+/**
+ * Sessão hospedada de verificação, já autenticada pela plataforma.
+ * O vendedor preenche dentro da thesain26, sem login no painel da Whop.
+ */
+export async function openVerificationSession(params: {
+  accountId: string;
+  kind: "business" | "individual";
+  returnUrl: string;
+  refreshUrl: string;
+}) {
+  const url = await createAccountLink({
+    accountId: params.accountId,
+    useCase: "account_onboarding",
+    returnUrl: params.returnUrl,
+    refreshUrl: params.refreshUrl,
+  });
+  const session = new URL(url);
+  session.searchParams.set("kind", params.kind);
+  return session.toString();
+}
+
 type DirectChargeInput = {
   accountId: string;
   price: number;
@@ -369,13 +390,18 @@ export async function listVerificationTasks(
     for (const verification of verificationsResult.value.data ?? []) {
       if (verification.status === "approved") continue;
       for (const item of verification.requested_information ?? []) {
+        if (!verification.id) continue;
         information.push({
           id: item.id,
+          verificationId: verification.id,
           label: item.label,
           requirement: item.requirement,
           type: item.type,
           actionUrl: item.action_url,
           optional: item.optional,
+          options: item.options,
+          responseType: item.response_type,
+          selectionMode: item.selection_mode,
           detailsLabel: item.details_label,
           errors: item.errors
             ?.map((error) => error.reason || error.code || "")

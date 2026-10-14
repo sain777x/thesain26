@@ -56,7 +56,11 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ id });
   } catch (error) {
-    if (error instanceof Error && !(error instanceof HttpError) && error.message.startsWith("Preencha")) {
+    if (
+      error instanceof Error &&
+      !(error instanceof HttpError) &&
+      (error.message.startsWith("Preencha") || error.message.includes("saque desta conta"))
+    ) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
     if (

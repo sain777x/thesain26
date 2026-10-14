@@ -55,6 +55,7 @@ export function PayoutDesk({
   const [country, setCountry] = useState<CountryOption | null>(null);
   const [catalog, setCatalog] = useState<CatalogMethod[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [setupNote, setSetupNote] = useState<string | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [methodQuery, setMethodQuery] = useState("");
   const [picked, setPicked] = useState<CatalogMethod | null>(null);
@@ -101,6 +102,7 @@ export function PayoutDesk({
     setCountry(null);
     setCatalog([]);
     setCatalogError(null);
+    setSetupNote(null);
     setMethodQuery("");
     setPicked(null);
     setFields([]);
@@ -113,13 +115,23 @@ export function PayoutDesk({
     setStep("method");
     setCatalog([]);
     setCatalogError(null);
+    setSetupNote(null);
     setCatalogLoading(true);
     setMethodQuery("");
     try {
       const response = await fetch(`/api/payouts/catalog?country=${next.code}`);
-      const data = (await response.json()) as { methods?: CatalogMethod[]; error?: string };
+      const data = (await response.json()) as {
+        methods?: CatalogMethod[];
+        setupRequired?: boolean;
+        error?: string;
+      };
       if (!response.ok) throw new Error(data.error ?? "Não foi possível listar os métodos.");
       setCatalog(data.methods ?? []);
+      setSetupNote(
+        data.setupRequired
+          ? "A verificação ainda precisa ser concluída para salvar a carteira. Os métodos deste país já aparecem abaixo."
+          : null,
+      );
     } catch (error) {
       setCatalogError(error instanceof Error ? error.message : "Não foi possível listar os métodos.");
     } finally {
@@ -544,6 +556,9 @@ export function PayoutDesk({
                   onChange={(event) => setMethodQuery(event.target.value)}
                 />
               </div>
+              {setupNote ? (
+                <p className="pt-3 text-center text-xs text-neutral-400">{setupNote}</p>
+              ) : null}
               {catalogLoading ? (
                 <p className="py-8 text-center text-sm text-neutral-400">Carregando métodos…</p>
               ) : catalogError ? (
