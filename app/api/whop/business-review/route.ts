@@ -68,22 +68,28 @@ export async function POST(request: Request) {
 
     let description = body.description;
     let socialUrl = body.socialUrl;
+    const hasFiles = answers.some((answer) => (answer.files?.length ?? 0) > 0);
+    let before: Awaited<ReturnType<typeof loadOpenInformation>> = [];
     if (answers.length > 0) {
-      const open = await loadOpenInformation(user.whopBizId);
-      const copied = presenceFromAnswers(open, answers);
+      before = await loadOpenInformation(user.whopBizId);
+      const copied = presenceFromAnswers(before, answers);
       description = description || copied.description;
       socialUrl = socialUrl || copied.socialUrl;
     }
-
     await saveBusinessPresence(user.whopBizId, {
       description,
       socialUrl,
       taxRemittedBy: body.taxHandling,
     });
     if (answers.length > 0) {
-      const open = body.taxHandling
+      const refreshed = hasFiles || body.taxHandling
         ? await loadOpenInformationUntilProof(user.whopBizId)
         : await loadOpenInformation(user.whopBizId);
+      const refreshedHasProof = refreshed.some(
+        (item) => item.requirement === "proof_of_fulfillment" || /proof of fulfillment|prova de cumprimento/i.test(item.label),
+      );
+      const seen = new Set(refreshed.map((item) => item.id));
+      const open = refreshedHasProof ? refreshed : [...refreshed, ...before.filter((item) => !seen.has(item.id))];
       const assigned = assignVerificationAnswers(answers, open);
       if (assigned.missingProof) {
         const savedText =

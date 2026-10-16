@@ -400,15 +400,21 @@ export async function loadVerificationDesk(accountId: string): Promise<Verificat
       if (verification.status === "approved" || !verification.id) continue;
       const kind = verification.kind === "business" ? "business" : "individual";
       for (const item of verification.requested_information ?? []) {
+        const raw = item as typeof item & { field?: string | null; error_message?: string | null };
+        const requirement = item.requirement || raw.field || "";
+        const reasons = (item.errors ?? [])
+          .map((error) => error.reason || error.code || "")
+          .filter(Boolean);
+        if (reasons.length === 0 && raw.error_message?.trim()) reasons.push(raw.error_message.trim());
         information.push({
           id: item.id,
           verificationId: verification.id,
           kind,
           label: item.label,
-          requirement: item.requirement,
+          requirement,
           type: normalizeInformationType({
             type: item.type,
-            requirement: item.requirement,
+            requirement,
             supportingFilesRequired: item.supporting_files_required,
           }),
           actionUrl: item.action_url,
@@ -416,10 +422,12 @@ export async function loadVerificationDesk(accountId: string): Promise<Verificat
           options: item.options,
           responseType: item.response_type,
           selectionMode: item.selection_mode,
-          detailsLabel: item.details_label,
-          errors: item.errors
-            ?.map((error) => error.reason || error.code || "")
-            .filter(Boolean),
+          detailsLabel:
+            item.details_label ||
+            (requirement === "proof_of_fulfillment"
+              ? "Mostre o que o comprador recebeu depois da compra. Envie imagens, PDF ou vídeo. Pode mandar vários arquivos, inclusive 6 ou mais."
+              : undefined),
+          errors: reasons,
         });
       }
     }

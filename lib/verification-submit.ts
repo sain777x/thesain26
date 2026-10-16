@@ -34,10 +34,14 @@ function fileIds(values: string[] | undefined) {
   return (values ?? []).filter((value) => FILE_ID.test(value));
 }
 
-function wantsFiles(item: { type?: string | null; requirement?: string | null }) {
+function requirementOf(item: { requirement?: string | null; field?: string | null }) {
+  return item.requirement || item.field || "";
+}
+
+function wantsFiles(item: { type?: string | null; requirement?: string | null; field?: string | null }) {
   const type = (item.type ?? "").toLowerCase();
   if (type === "files" || type === "file" || type === "document" || type === "documents") return true;
-  return item.requirement === "proof_of_fulfillment" && type !== "text" && type !== "text_with_files";
+  return requirementOf(item) === "proof_of_fulfillment" && type !== "text" && type !== "text_with_files";
 }
 
 export type OpenInformation = {
@@ -49,11 +53,16 @@ export type OpenInformation = {
   responseType?: string | null;
 };
 
-function isProofItem(item: { requirement: string; label: string; type: string }) {
-  const text = `${item.requirement} ${item.label}`.toLowerCase();
-  if (item.requirement === "proof_of_fulfillment") return true;
-  if (/proof of fulfillment|prova de cumprimento/.test(text)) return true;
-  return item.requirement === "proof_of_funnel" && wantsFiles(item);
+function isProofItem(item: { requirement: string; label: string; type: string; field?: string | null }) {
+  const requirement = requirementOf(item);
+  const text = `${requirement} ${item.label}`.toLowerCase();
+  if (requirement === "proof_of_fulfillment") return true;
+  if (/proof of fulfillment|prova de cumprimento|proof of delivery/.test(text)) return true;
+  return requirement === "proof_of_funnel" && wantsFiles(item);
+}
+
+function proofTarget(open: OpenInformation[]) {
+  return open.find((item) => isProofItem(item));
 }
 
 /** Lê de novo os pedidos abertos. O retrieve completa o que a lista às vezes omite. */
@@ -79,10 +88,11 @@ export async function loadOpenInformation(accountId: string): Promise<OpenInform
   for (const verification of rows) {
     if (!verification.id || verification.status === "approved") continue;
     for (const item of verification.requested_information ?? []) {
+      const raw = item as typeof item & { field?: string | null };
       items.push({
         verificationId: verification.id,
         id: item.id,
-        requirement: item.requirement,
+        requirement: requirementOf(raw),
         label: item.label,
         type: item.type,
         responseType: item.response_type,
@@ -101,35 +111,41 @@ export async function loadOpenInformationUntilProof(accountId: string, attempts 
   return open;
 }
 
+function attachProofFiles(bucket: VerificationAnswer[], proofId: string, answer: VerificationAnswer, files: string[]) {
+  const existing = bucket.find((item) => item.id === proofId);
+  if (existing) {
+    existing.files = [...fileIds(existing.files), ...files];
+    return;
+  }
+  bucket.push({ ...answer, id: proofId, files });
+}
+
 export function assignVerificationAnswers(answers: VerificationAnswer[], open: OpenInformation[]) {
   const byId = new Map(open.map((item) => [item.id, item]));
   const groups = new Map<string, VerificationAnswer[]>();
+  const proof = proofTarget(open);
   let missingProof = false;
 
   for (const answer of answers) {
-    if (answer.id === PROOF_FIELD_ID) {
-      const proof = open.find((item) => isProofItem(item));
-      const files = fileIds(answer.files);
+    const files = fileIds(answer.files);
+    const known = byId.get(answer.id);
+    const synthetic = answer.id === PROOF_FIELD_ID;
+    const staleFileAnswer = !synthetic && !known && files.length > 0 && Boolean(proof);
+    if (synthetic || staleFileAnswer) {
       if (!proof) {
         if (files.length > 0) missingProof = true;
         continue;
       }
       const bucket = groups.get(proof.verificationId) ?? [];
-      const existing = bucket.find((item) => item.id === proof.id);
-      if (existing) {
-        existing.files = [...fileIds(existing.files), ...files];
-      } else {
-        bucket.push({ ...answer, id: proof.id, files });
-      }
+      attachProofFiles(bucket, proof.id, answer, files);
       groups.set(proof.verificationId, bucket);
       continue;
     }
 
-    const item = byId.get(answer.id);
-    if (!item || !ITEM_ID.test(answer.id)) continue;
-    const bucket = groups.get(item.verificationId) ?? [];
+    if (!known || !ITEM_ID.test(answer.id)) continue;
+    const bucket = groups.get(known.verificationId) ?? [];
     bucket.push(answer);
-    groups.set(item.verificationId, bucket);
+    groups.set(known.verificationId, bucket);
   }
 
   return {
@@ -192,14 +208,22 @@ export async function submitVerificationAnswers(params: {
 }) {
   const client = getWhop();
   const list = await client.verifications.list({ account_id: params.accountId });
-  const verification = (list.data ?? []).find((item) => item.id === params.verificationId);
-  if (!verification?.id) {
+  const listed = (list.data ?? []).find((item) => item.id === params.verificationId);
+  if (!listed?.id) {
     throw new Error("Este pedido não pertence à sua conta.");
   }
 
-  const open = new Map(
-    (verification.requested_information ?? []).map((item) => [item.id, item]),
-  );
+  let requestedInformation = listed.requested_information ?? [];
+  try {
+    const full = await client.verifications.retrieve({ id: listed.id });
+    if ((full.requested_information?.length ?? 0) >= requestedInformation.length) {
+      requestedInformation = full.requested_information ?? requestedInformation;
+    }
+  } catch (error) {
+    console.error("[thesain26] verifications.retrieve", whopErrorMessage(error));
+  }
+
+  const open = new Map(requestedInformation.map((item) => [item.id, item]));
   const requested = params.answers.filter((answer) => ITEM_ID.test(answer.id) && open.has(answer.id));
   if (requested.length === 0) {
     throw new Error("Não há informação pendente para enviar.");
@@ -263,7 +287,7 @@ export async function submitVerificationAnswers(params: {
 
   try {
     return await client.verifications.update({
-      id: verification.id,
+      id: listed.id,
       body: { requested_information: payload },
     });
   } catch (error) {
