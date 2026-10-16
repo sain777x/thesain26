@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatMoney } from "@/lib/format";
-import type { SellerTreasury } from "@/lib/payouts";
+import { Badge } from "@/components/ui/badge";
+import { formatMoney, formatRelease } from "@/lib/format";
+import type { AccountStanding, SellerTreasury } from "@/lib/payouts";
 
 export type TreasuryRow = {
   id: string;
@@ -15,7 +16,7 @@ export type TreasuryRow = {
 
 const filters = [
   { id: "all", label: "Todas" },
-  { id: "pending", label: "Pendente amanhã" },
+  { id: "pending", label: "Pendente" },
   { id: "reserve", label: "Reserva 14 ou 30 dias" },
   { id: "withdrawn", label: "Já sacou" },
   { id: "available", label: "Saldo disponível" },
@@ -39,6 +40,43 @@ function cell(treasury: SellerTreasury | null, pick: (treasury: SellerTreasury) 
   return formatMoney(pick(treasury), treasury.currency);
 }
 
+function pendingCell(treasury: SellerTreasury | null) {
+  if (!treasury || treasury.error) return "—";
+  const amount = formatMoney(treasury.pendingNextDay, treasury.currency);
+  if (treasury.pendingNextDay <= 0) return amount;
+  return (
+    <span>
+      <span className="block">{amount}</span>
+      <span className="block text-xs text-muted-foreground">
+        {formatRelease(treasury.pendingReleaseAt) ?? "Data ainda não informada"}
+      </span>
+    </span>
+  );
+}
+
+export function AccountStandingBadge({
+  standing,
+  connected = true,
+}: {
+  standing: AccountStanding | null;
+  connected?: boolean;
+}) {
+  if (!connected) return <span className="text-xs text-muted-foreground">Sem conta</span>;
+  if (!standing) return <span className="text-xs text-muted-foreground">Sem leitura</span>;
+  const variant =
+    standing.tone === "ok" ? "default" : standing.tone === "bad" ? "destructive" : "outline";
+  return (
+    <div className="space-y-1">
+      <Badge variant={variant}>{standing.label}</Badge>
+      {standing.notes.map((note) => (
+        <p key={note} className="text-xs text-muted-foreground">
+          {note}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export function AdminTreasury({ rows }: { rows: TreasuryRow[] }) {
   const [filter, setFilter] = useState<FilterId>("all");
   const visible = useMemo(() => rows.filter((row) => matches(row, filter)), [rows, filter]);
@@ -59,12 +97,23 @@ export function AdminTreasury({ rows }: { rows: TreasuryRow[] }) {
       { available: 0, pending: 0, reserve14: 0, reserve30: 0, reserveOpen: 0, withdrawn: 0, withdrawing: 0 },
     );
   }, [rows]);
+  const nextReleaseAt = useMemo(() => {
+    const dates = rows
+      .map((row) => row.treasury?.pendingReleaseAt)
+      .filter((value): value is string => Boolean(value))
+      .sort();
+    return dates[0] ?? null;
+  }, [rows]);
 
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Total label="Disponível agora" value={formatMoney(totals.available)} />
-        <Total label="Pendente · dia seguinte" value={formatMoney(totals.pending)} />
+        <Total
+          label="Pendente"
+          value={formatMoney(totals.pending)}
+          detail={nextReleaseAt ? `Próxima liberação ${formatRelease(nextReleaseAt)}` : undefined}
+        />
         <Total
           label="Reservas"
           value={formatMoney(totals.reserve14 + totals.reserve30 + totals.reserveOpen)}
@@ -102,7 +151,7 @@ export function AdminTreasury({ rows }: { rows: TreasuryRow[] }) {
               <tr>
                 <th className="py-2 font-medium">Vendedor</th>
                 <th className="py-2 font-medium">Disponível</th>
-                <th className="py-2 font-medium">Pendente amanhã</th>
+                <th className="py-2 font-medium">Pendente</th>
                 <th className="py-2 font-medium">Reserva 14 dias</th>
                 <th className="py-2 font-medium">Reserva 30 dias</th>
                 <th className="py-2 font-medium">Reserva sem prazo</th>
@@ -120,12 +169,18 @@ export function AdminTreasury({ rows }: { rows: TreasuryRow[] }) {
                       {row.store ?? "Sem loja"}
                       {row.account ? "" : " · sem conta de recebimento"}
                     </p>
+                    <div className="mt-1">
+                      <AccountStandingBadge
+                        standing={row.treasury?.standing ?? null}
+                        connected={Boolean(row.account)}
+                      />
+                    </div>
                     {row.treasury?.error ? (
                       <p className="mt-1 text-xs text-destructive">{row.treasury.error}</p>
                     ) : null}
                   </td>
                   <td className="py-3">{cell(row.treasury, (item) => item.available)}</td>
-                  <td className="py-3">{cell(row.treasury, (item) => item.pendingNextDay)}</td>
+                  <td className="py-3">{pendingCell(row.treasury)}</td>
                   <td className="py-3">{cell(row.treasury, (item) => item.reserve14)}</td>
                   <td className="py-3">{cell(row.treasury, (item) => item.reserve30)}</td>
                   <td className="py-3">{cell(row.treasury, (item) => item.reserveOpen)}</td>
@@ -138,7 +193,7 @@ export function AdminTreasury({ rows }: { rows: TreasuryRow[] }) {
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        Pendente amanhã é o saldo que ainda não liquidou. A reserva de 14 dias reúne liberações entre 3 e 21 dias;
+        A data ao lado do pendente é o horário UTC em que a Whop libera esse saldo. A reserva de 14 dias reúne liberações entre 3 e 21 dias;
         a de 30 dias, o que passa disso. O que a conta segura sem data de liberação fica em reserva sem prazo.
       </p>
     </div>

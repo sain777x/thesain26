@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AdminTreasury, type TreasuryRow } from "@/components/admin-treasury";
+import { AccountStandingBadge, AdminTreasury, type TreasuryRow } from "@/components/admin-treasury";
 import { FeeForm, SellerFeeForm } from "@/components/admin-forms";
 import { formatDate, formatMoney, kycLabel } from "@/lib/format";
 import { loadSellerTreasury } from "@/lib/payouts";
@@ -41,6 +41,9 @@ export default async function AdminPage() {
     account: seller.whopBizId,
     treasury: seller.whopBizId ? await loadSellerTreasury(seller.whopBizId) : null,
   }));
+  const standingById = new Map(
+    treasuryRows.map((row) => [row.id, row.treasury?.standing ?? null]),
+  );
 
   return (
     <div className="space-y-8">
@@ -111,12 +114,13 @@ export default async function AdminPage() {
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-left text-sm">
+              <table className="w-full min-w-[920px] text-left text-sm">
                 <thead className="text-muted-foreground">
                   <tr>
                     <th className="py-2 font-medium">Vendedor</th>
                     <th className="py-2 font-medium">Loja</th>
                     <th className="py-2 font-medium">KYC</th>
+                    <th className="py-2 font-medium">Situação</th>
                     <th className="py-2 font-medium">Conta Whop</th>
                     <th className="py-2 font-medium">Vendas</th>
                     <th className="py-2 font-medium">Comissão</th>
@@ -146,6 +150,12 @@ export default async function AdminPage() {
                         >
                           {kycLabel(seller.kycStatus)}
                         </Badge>
+                      </td>
+                      <td className="py-3">
+                        <AccountStandingBadge
+                          standing={standingById.get(seller.id) ?? null}
+                          connected={Boolean(seller.whopBizId)}
+                        />
                       </td>
                       <td className="py-3 font-mono text-xs">
                         {seller.whopBizId ?? "sem conta"}

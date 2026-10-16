@@ -96,6 +96,19 @@ export function formatDate(date: Date | string) {
   }).format(new Date(date));
 }
 
+/** Data e hora da liberação, no mesmo horário UTC que a Whop mostra no saldo. */
+export function formatRelease(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const formatted = new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(date);
+  return `${formatted} UTC`;
+}
+
 export function parseMoney(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
