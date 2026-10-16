@@ -6,6 +6,7 @@ import { presenceFromAnswers, saveBusinessPresence } from "@/lib/whop";
 import {
   assignVerificationAnswers,
   loadOpenInformation,
+  loadOpenInformationUntilProof,
   submitVerificationAnswers,
 } from "@/lib/verification-submit";
 import { PROOF_FIELD_ID } from "@/lib/verification-tasks";
@@ -15,6 +16,14 @@ const schema = z.object({
   verificationId: z.string().regex(/^idpf_[A-Za-z0-9]+$/).optional(),
   description: z.string().trim().max(1000).optional(),
   socialUrl: z.string().trim().max(255).optional(),
+  taxHandling: z.enum(["self", "whop", "none"]).optional(),
+  taxOptOut: z
+    .object({
+      responsible: z.literal(true),
+      liability: z.literal(true),
+      noCollection: z.literal(true),
+    })
+    .optional(),
   answers: z
     .array(
       z.object({
@@ -47,11 +56,14 @@ export async function POST(request: Request) {
     }
     const body = schema.parse(await request.json());
     const answers = body.answers ?? [];
-    if (!body.description && !body.socialUrl && answers.length === 0) {
-      throw new HttpError(400, "Preencha a descrição, o perfil ou os pedidos da análise.");
+    if (!body.description && !body.socialUrl && !body.taxHandling && answers.length === 0) {
+      throw new HttpError(400, "Preencha a descrição, o perfil, o imposto ou os pedidos da análise.");
     }
     if (body.description && body.description.length < 100) {
       throw new HttpError(400, "A descrição precisa ter entre 100 e 1000 caracteres.");
+    }
+    if (body.taxHandling === "none" && !body.taxOptOut) {
+      throw new HttpError(400, "Confirme as três declarações para cuidar do imposto por conta própria.");
     }
 
     let description = body.description;
@@ -63,16 +75,22 @@ export async function POST(request: Request) {
       socialUrl = socialUrl || copied.socialUrl;
     }
 
-    await saveBusinessPresence(user.whopBizId, { description, socialUrl });
+    await saveBusinessPresence(user.whopBizId, {
+      description,
+      socialUrl,
+      taxRemittedBy: body.taxHandling,
+    });
     if (answers.length > 0) {
-      const open = await loadOpenInformation(user.whopBizId);
+      const open = body.taxHandling
+        ? await loadOpenInformationUntilProof(user.whopBizId)
+        : await loadOpenInformation(user.whopBizId);
       const assigned = assignVerificationAnswers(answers, open);
       if (assigned.missingProof) {
+        const savedText =
+          description || socialUrl || body.taxHandling ? "Os dados desta etapa foram salvos. " : "";
         throw new HttpError(
           400,
-          description || socialUrl
-            ? "A descrição e o perfil foram salvos. A Whop ainda não abriu o pedido dos arquivos nesta conta. Atualize a página e envie as provas de novo."
-            : "A Whop ainda não abriu o pedido dos arquivos nesta conta. Atualize a página e envie as provas de novo.",
+          `${savedText}A Whop ainda não abriu o pedido dos arquivos nesta conta. Atualize a página e envie as provas de novo.`,
         );
       }
       if (assigned.groups.length === 0) {

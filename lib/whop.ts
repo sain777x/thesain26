@@ -453,6 +453,7 @@ export async function loadVerificationDesk(accountId: string): Promise<Verificat
     information,
     verifications,
     openVerificationId,
+    taxRemittedBy: account?.tax_remitted_by ?? null,
     capabilities: {
       standardPayout: account?.capabilities?.standard_payout,
       cardIssuing: account?.capabilities?.card_issuing,
@@ -465,7 +466,7 @@ export async function loadVerificationDesk(accountId: string): Promise<Verificat
 /** Grava descrição e perfil/site pedidos na análise do negócio. */
 export async function saveBusinessPresence(
   accountId: string,
-  input: { description?: string; socialUrl?: string },
+  input: { description?: string; socialUrl?: string; taxRemittedBy?: "whop" | "self" | "none" },
 ) {
   const client = getWhop();
   const description = input.description?.trim();
@@ -473,7 +474,7 @@ export async function saveBusinessPresence(
   if (input.socialUrl?.trim() && !socialUrl) {
     throw new Error("Informe um site ou perfil com um endereço válido.");
   }
-  if (!description && !socialUrl) return;
+  if (!description && !socialUrl && !input.taxRemittedBy) return;
 
   const account = await client.accounts.retrieve({ id: accountId });
   const existing = (account.social_links ?? []).map((link) => ({
@@ -493,6 +494,7 @@ export async function saveBusinessPresence(
     ...(description ? { description: description.slice(0, 1000) } : {}),
     ...(socialUrl && socialPlatform(socialUrl) === "website" ? { website: socialUrl } : {}),
     ...(socialUrl ? { social_links: socialLinks } : {}),
+    ...(input.taxRemittedBy ? { tax_remitted_by: input.taxRemittedBy } : {}),
   });
 }
 

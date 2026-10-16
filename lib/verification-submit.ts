@@ -92,6 +92,15 @@ export async function loadOpenInformation(accountId: string): Promise<OpenInform
   return items;
 }
 
+export async function loadOpenInformationUntilProof(accountId: string, attempts = 4) {
+  let open = await loadOpenInformation(accountId);
+  for (let attempt = 1; attempt < attempts && !open.some((item) => isProofItem(item)); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    open = await loadOpenInformation(accountId);
+  }
+  return open;
+}
+
 export function assignVerificationAnswers(answers: VerificationAnswer[], open: OpenInformation[]) {
   const byId = new Map(open.map((item) => [item.id, item]));
   const groups = new Map<string, VerificationAnswer[]>();

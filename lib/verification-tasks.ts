@@ -436,6 +436,8 @@ export type VerificationDesk = {
       askSocial: boolean;
       descriptionRequired: boolean;
       socialRequired: boolean;
+      askTax: boolean;
+      taxHandling: "whop" | "self" | "none" | null;
     };
     tasks: VerificationTask[];
   };
@@ -563,6 +565,7 @@ export function buildVerificationDesk(input: {
   information: InformationInput[];
   verifications: { kind?: string | null; status?: string | null }[];
   openVerificationId?: string;
+  taxRemittedBy?: "whop" | "self" | "none" | null;
   capabilities: {
     standardPayout?: string | null;
     cardIssuing?: string | null;
@@ -628,6 +631,8 @@ export function buildVerificationDesk(input: {
         askSocial: Boolean(reviewRequired && !socialCovered),
         descriptionRequired: Boolean(reviewRequired && !descriptionCovered && !hasDescription),
         socialRequired: Boolean(reviewRequired && !socialCovered && !hasSocial),
+        askTax: Boolean(reviewRequired && !input.taxRemittedBy),
+        taxHandling: input.taxRemittedBy ?? null,
       },
       tasks,
     },

@@ -107,6 +107,8 @@ export function VerificationForm({
     askSocial: boolean;
     descriptionRequired: boolean;
     socialRequired: boolean;
+    askTax?: boolean;
+    taxHandling?: "whop" | "self" | "none" | null;
   } | null;
 }) {
   const router = useRouter();
@@ -117,6 +119,8 @@ export function VerificationForm({
   const [done, setDone] = useState(false);
   const [idTypes, setIdTypes] = useState<Record<string, string>>({});
   const [attachments, setAttachments] = useState<Record<string, File[]>>({});
+  const [taxChoice, setTaxChoice] = useState<"self" | "whop" | "none" | "">("");
+  const [taxOptOut, setTaxOptOut] = useState({ responsible: false, liability: false, noCollection: false });
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -125,6 +129,17 @@ export function VerificationForm({
     const form = new FormData(event.currentTarget);
 
     try {
+      if (profile?.askTax && !taxChoice) {
+        throw new Error("Escolha como o imposto das vendas deve ser tratado.");
+      }
+      if (
+        profile?.askTax &&
+        taxChoice === "none" &&
+        (!taxOptOut.responsible || !taxOptOut.liability || !taxOptOut.noCollection)
+      ) {
+        throw new Error("Confirme as três declarações para cuidar do imposto por conta própria.");
+      }
+
       const answers = [];
       for (const field of fields) {
         if (field.type === "address") {
@@ -193,6 +208,15 @@ export function VerificationForm({
           answers,
           description: profile?.askDescription ? String(form.get("profile.description") ?? "") : undefined,
           socialUrl: profile?.askSocial ? String(form.get("profile.social") ?? "") : undefined,
+          taxHandling: profile?.askTax && taxChoice ? taxChoice : undefined,
+          taxOptOut:
+            profile?.askTax && taxChoice === "none"
+              ? {
+                  responsible: taxOptOut.responsible,
+                  liability: taxOptOut.liability,
+                  noCollection: taxOptOut.noCollection,
+                }
+              : undefined,
         }),
       });
       const data = (await response.json().catch(() => ({}))) as { error?: string };
@@ -232,6 +256,14 @@ export function VerificationForm({
           />
         </div>
       ) : null}
+      {profile?.askTax ? (
+        <TaxChoice
+          value={taxChoice}
+          onChange={setTaxChoice}
+          optOut={taxOptOut}
+          onOptOut={setTaxOptOut}
+        />
+      ) : null}
       {fields.map((field) => (
         <fieldset key={field.id} className="space-y-2">
           <Label htmlFor={field.id}>
@@ -264,6 +296,113 @@ export function VerificationForm({
         {pending ? progress ?? "Enviando…" : label}
       </Button>
     </form>
+  );
+}
+
+const TAX_OPTIONS = [
+  {
+    id: "self" as const,
+    title: "A Whop cobra o imposto, eu repasso",
+    recommended: true,
+    body: "A Whop cobra o imposto no checkout onde você tem registro fiscal e inclui esse valor no seu saque, para você repassar.",
+    meta: "Taxa de 2% por transação · disponível em mais de 90 países",
+  },
+  {
+    id: "whop" as const,
+    title: "A Whop cobra e repassa o imposto",
+    recommended: false,
+    body: "A Whop cobra o imposto no checkout e depois repassa. Vale para vendas nas regiões em que a Whop é registrada.",
+    meta: "Taxa de 2% por transação · só EUA, Reino Unido e União Europeia",
+  },
+  {
+    id: "none" as const,
+    title: "Eu mesmo cuido do imposto",
+    recommended: false,
+    body: "A Whop não cobra imposto no checkout. Você assume toda a responsabilidade em todos os lugares onde vende.",
+    meta: "",
+  },
+];
+
+function TaxChoice({
+  value,
+  onChange,
+  optOut,
+  onOptOut,
+}: {
+  value: "" | "self" | "whop" | "none";
+  onChange: (value: "self" | "whop" | "none") => void;
+  optOut: { responsible: boolean; liability: boolean; noCollection: boolean };
+  onOptOut: (value: { responsible: boolean; liability: boolean; noCollection: boolean }) => void;
+}) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="text-sm font-medium">Como o imposto deve ser tratado nas suas vendas?</legend>
+      <p className="text-sm text-muted-foreground">
+        A Whop pede essa escolha antes das provas. Sem ela, os arquivos da análise não seguem.
+      </p>
+      <div className="space-y-2">
+        {TAX_OPTIONS.map((option) => {
+          const selected = value === option.id;
+          return (
+            <label
+              key={option.id}
+              className={`block cursor-pointer rounded-xl border px-4 py-3 ${
+                selected ? "border-primary ring-1 ring-primary" : "border-input"
+              }`}
+            >
+              <span className="flex items-start gap-3">
+                <input
+                  type="radio"
+                  name="tax.handling"
+                  value={option.id}
+                  checked={selected}
+                  onChange={() => onChange(option.id)}
+                  className="mt-1"
+                  required
+                />
+                <span className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                    {option.title}
+                    {option.recommended ? (
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">Recomendado</span>
+                    ) : null}
+                  </span>
+                  <span className="mt-1 block text-sm text-muted-foreground">{option.body}</span>
+                  {option.meta ? <span className="mt-1 block text-xs text-muted-foreground">{option.meta}</span> : null}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {value === "none" ? (
+        <div className="space-y-3 rounded-xl bg-destructive/10 px-4 py-3">
+          <p className="text-sm font-medium">Antes de sair da cobrança automática de imposto</p>
+          <p className="text-sm text-destructive">
+            A Whop não vai calcular, cobrar nem mostrar imposto no checkout. Você assume toda a responsabilidade fiscal
+            em todos os lugares onde vende.
+          </p>
+          {(
+            [
+              ["responsible", "Entendo que sou responsável por calcular e cobrar o imposto de vendas e o VAT corretos dos compradores onde isso se aplica."],
+              ["liability", "Entendo que deixar de cobrar ou pagar o imposto corretamente pode gerar multas, auditorias ou responsabilidade legal."],
+              ["noCollection", "Entendo que a Whop não vai calcular, cobrar nem mostrar imposto no checkout para mim."],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={optOut[key]}
+                onChange={(event) => onOptOut({ ...optOut, [key]: event.target.checked })}
+                required
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+      ) : null}
+    </fieldset>
   );
 }
 

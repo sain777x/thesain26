@@ -325,7 +325,8 @@ function BusinessReview({ desk }: { desk: VerificationDesk }) {
   const review = desk.businessReview;
   const forms = review.tasks.filter((task) => task.resolve.kind === "form");
   const others = review.tasks.filter((task) => task.resolve.kind !== "form");
-  const profile = review.profile.askDescription || review.profile.askSocial ? review.profile : null;
+  const profile =
+    review.profile.askDescription || review.profile.askSocial || review.profile.askTax ? review.profile : null;
 
   if (forms.length === 0 && !profile) {
     return <p className="text-sm text-muted-foreground">Nenhum campo pendente nesta análise.</p>;
