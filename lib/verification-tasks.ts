@@ -465,6 +465,83 @@ export function isSocialRequest(item: {
   return /social|website|perfil|rede/.test(requirement) || /rede social|perfil|website|site ou/.test(label);
 }
 
+/** Id sintético. No envio ele é trocado pelo `inrqi_` real de proof_of_fulfillment. */
+export const PROOF_FIELD_ID = "proof_of_fulfillment";
+
+export function normalizeInformationType(item: {
+  type?: string | null;
+  requirement?: string | null;
+  supportingFilesRequired?: boolean;
+}) {
+  const type = (item.type ?? "").toLowerCase();
+  const requirement = (item.requirement ?? "").toLowerCase();
+  if (item.supportingFilesRequired && (type === "text" || type === "")) return "text_with_files";
+  if (type === "file" || type === "document" || type === "documents") return "files";
+  if (requirement === "proof_of_fulfillment" && type !== "text" && type !== "text_with_files") {
+    return "files";
+  }
+  return item.type || "text";
+}
+
+export function isUploadField(field: { type: string }) {
+  return (
+    field.type === "files" ||
+    field.type === "file" ||
+    field.type === "document" ||
+    field.type === "documents" ||
+    field.type === "text_with_files"
+  );
+}
+
+function proofField(): InformationField {
+  return {
+    id: PROOF_FIELD_ID,
+    label: "Prova de cumprimento",
+    requirement: "proof_of_fulfillment",
+    type: "files",
+    detailsLabel:
+      "Mostre que o comprador recebeu o que pagou. Envie imagens (JPEG, PNG e outras), PDF ou vídeo (MP4 e outros). Dá para mandar vários arquivos, inclusive 6 ou mais.",
+  };
+}
+
+function withProofUpload(tasks: VerificationTask[], reviewRequired: boolean, verificationId: string) {
+  if (!reviewRequired) return tasks;
+  const hasUpload = tasks.some(
+    (task) => task.resolve.kind === "form" && task.resolve.fields.some((field) => isUploadField(field)),
+  );
+  if (hasUpload) return tasks;
+
+  const field = proofField();
+  const index = tasks.findIndex((task) => task.resolve.kind === "form");
+  if (index >= 0) {
+    const task = tasks[index];
+    if (task.resolve.kind !== "form") return tasks;
+    const next = [...tasks];
+    next[index] = {
+      ...task,
+      resolve: { ...task.resolve, fields: [...task.resolve.fields, field] },
+    };
+    return next;
+  }
+
+  const task: VerificationTask = {
+    id: verificationId ? `info-${verificationId}-proof` : "info-proof",
+    title: "Prova de cumprimento",
+    description: "Envie os arquivos que a análise pediu junto com a descrição e o perfil.",
+    category: "proof",
+    status: "required",
+    details: [field.detailsLabel ?? ""],
+    blocked: [],
+    resolve: {
+      kind: "form",
+      verificationId,
+      label: "Enviar informações",
+      fields: [field],
+    },
+  };
+  return [...tasks, task];
+}
+
 function latestStatus(statuses: string[]) {
   const ranked = [...statuses].sort(
     (left, right) => IDENTITY_STATUS_RANK.indexOf(left) - IDENTITY_STATUS_RANK.indexOf(right),
@@ -485,6 +562,7 @@ export function buildVerificationDesk(input: {
   actions: RequiredActionInput[];
   information: InformationInput[];
   verifications: { kind?: string | null; status?: string | null }[];
+  openVerificationId?: string;
   capabilities: {
     standardPayout?: string | null;
     cardIssuing?: string | null;
@@ -514,6 +592,7 @@ export function buildVerificationDesk(input: {
   const reviewRequired = review?.status === "required";
   const hasDescription = Boolean(input.description.trim());
   const hasSocial = Boolean(input.socialUrl.trim());
+  const tasks = withProofUpload(businessTasks, reviewRequired, input.openVerificationId ?? "");
 
   const lanes: IdentityLane[] = (
     [
@@ -536,12 +615,12 @@ export function buildVerificationDesk(input: {
 
   return {
     businessReview: {
-      open: Boolean(review) || businessTasks.length > 0,
+      open: Boolean(review) || tasks.length > 0,
       pendingReview: review?.status === "pending" && businessTasks.length === 0,
       affectsWithdrawals: Boolean(review),
       title: "Análise do negócio",
       description:
-        "Envie a descrição da empresa, o perfil de rede social ou o site, e os arquivos que a Whop pediu nesta análise.",
+        "Envie a descrição da empresa, o perfil de rede social ou o site e as provas do que o comprador recebeu. As provas podem ser várias imagens, PDF ou vídeo.",
       profile: {
         description: input.description,
         socialUrl: input.socialUrl,
@@ -550,7 +629,7 @@ export function buildVerificationDesk(input: {
         descriptionRequired: Boolean(reviewRequired && !descriptionCovered && !hasDescription),
         socialRequired: Boolean(reviewRequired && !socialCovered && !hasSocial),
       },
-      tasks: businessTasks,
+      tasks,
     },
     identity: lanes,
     capabilities: [

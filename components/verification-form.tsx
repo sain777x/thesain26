@@ -7,6 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { listCountries } from "@/lib/countries";
+import {
+  MAX_VERIFICATION_FILES,
+  VERIFICATION_FILE_ACCEPT,
+  verificationFileKind,
+} from "@/lib/verification-files";
 import type { InformationField } from "@/lib/verification-tasks";
 
 const ID_LABELS: Record<string, string> = {
@@ -16,13 +21,7 @@ const ID_LABELS: Record<string, string> = {
   RESIDENCE_PERMIT: "Autorização de residência",
 };
 
-const MAX_FILES = 20;
-const DOCUMENT_BYTES = 32 * 1024 * 1024;
-const VIDEO_BYTES = 100 * 1024 * 1024;
-const DOCUMENT_TYPES = new Set(["image/jpeg", "image/png", "application/pdf"]);
-const VIDEO_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm", "video/x-m4v"]);
-const FILE_ACCEPT =
-  "image/jpeg,image/png,application/pdf,video/mp4,video/quicktime,video/webm,.jpg,.jpeg,.png,.pdf,.mp4,.mov,.m4v,.webm";
+const MAX_FILES = MAX_VERIFICATION_FILES;
 
 const ID_SLOTS: Record<string, { key: string; label: string }[]> = {
   PASSPORT: [{ key: "passport_front", label: "Página da foto" }],
@@ -61,21 +60,11 @@ async function sendFile(file: File) {
 }
 
 function needsFiles(field: InformationField) {
-  return field.type === "files" || field.type === "text_with_files";
+  return field.type === "files" || field.type === "file" || field.type === "text_with_files";
 }
 
 function fileKey(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}`;
-}
-
-function fileKind(file: File) {
-  const type = file.type.toLowerCase();
-  const name = file.name.toLowerCase();
-  if (DOCUMENT_TYPES.has(type) || type === "image/jpg" || /\.(jpe?g|png|pdf)$/.test(name)) {
-    return "document" as const;
-  }
-  if (VIDEO_TYPES.has(type) || /\.(mp4|mov|m4v|webm)$/.test(name)) return "video" as const;
-  return null;
 }
 
 function formatSize(bytes: number) {
@@ -91,18 +80,9 @@ function absorbFiles(current: File[], incoming: FileList | File[] | null) {
       rejected.push(`Dá para enviar até ${MAX_FILES} arquivos neste pedido.`);
       break;
     }
-    const kind = fileKind(file);
-    if (!kind) {
-      rejected.push(`${file.name} precisa ser JPEG, PNG, PDF ou vídeo (MP4, MOV ou WEBM).`);
-      continue;
-    }
-    const limit = kind === "video" ? VIDEO_BYTES : DOCUMENT_BYTES;
-    if (file.size <= 0 || file.size > limit) {
-      rejected.push(
-        kind === "video"
-          ? `${file.name} passa de 100 MB. Envie um vídeo menor.`
-          : `${file.name} precisa ter até 32 MB.`,
-      );
+    const kind = verificationFileKind(file);
+    if (!kind.ok) {
+      rejected.push(kind.reason);
       continue;
     }
     if (next.some((item) => fileKey(item) === fileKey(file))) continue;
@@ -190,9 +170,10 @@ export function VerificationForm({
           id: field.id,
           value: String(form.get(field.id) ?? ""),
         };
-        if (needsFiles(field)) {
+        if (needsFiles(field) || field.requirement === "proof_of_fulfillment") {
           const picked = attachments[field.id] ?? [];
-          if (field.type === "files" && !field.optional && picked.length === 0) {
+          const requiresUpload = !field.optional && field.type !== "text";
+          if (requiresUpload && picked.length === 0) {
             throw new Error(`Adicione pelo menos um arquivo em “${field.label}”.`);
           }
           answer.files = [];
@@ -238,18 +219,7 @@ export function VerificationForm({
 
   return (
     <form className="space-y-5" onSubmit={onSubmit}>
-      {profile?.askDescription ? (
-        <div className="space-y-2">
-          <Label htmlFor="profile.description">Descrição da empresa</Label>
-          <Textarea
-            id="profile.description"
-            name="profile.description"
-            defaultValue={profile.description}
-            required={profile.descriptionRequired}
-            placeholder="O que a empresa vende e para quem."
-          />
-        </div>
-      ) : null}
+      {profile?.askDescription ? <DescriptionField initial={profile.description} required={profile.descriptionRequired} /> : null}
       {profile?.askSocial ? (
         <div className="space-y-2">
           <Label htmlFor="profile.social">Perfil de rede social ou site</Label>
@@ -268,6 +238,7 @@ export function VerificationForm({
             {field.label}
             {field.optional ? " (opcional)" : ""}
           </Label>
+          {field.detailsLabel ? <p className="text-sm text-muted-foreground">{field.detailsLabel}</p> : null}
           {field.errors?.map((reason) => (
             <p key={reason} className="text-sm text-destructive">
               {reason}
@@ -293,6 +264,32 @@ export function VerificationForm({
         {pending ? progress ?? "Enviando…" : label}
       </Button>
     </form>
+  );
+}
+
+function DescriptionField({ initial, required }: { initial: string; required: boolean }) {
+  const [value, setValue] = useState(initial);
+  const count = value.trim().length;
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="profile.description">Descrição da empresa</Label>
+      <p className="text-sm text-muted-foreground">
+        Descreva o que a empresa vende, o que o cliente recebe depois do pagamento e onde acessa a compra.
+      </p>
+      <Textarea
+        id="profile.description"
+        name="profile.description"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        required={required || count < 100}
+        minLength={100}
+        maxLength={1000}
+        placeholder="Descreva o negócio e o que o cliente recebe"
+      />
+      <p className={count < 100 ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+        {count}/100 caracteres no mínimo · até 1000
+      </p>
+    </div>
   );
 }
 
@@ -415,7 +412,10 @@ function FieldControl({
     );
   }
 
-  if (field.type === "files") {
+  if (field.type === "files" || field.type === "file" || field.type === "document" || field.type === "documents") {
+    return <FileStack files={files} onChange={onFiles} />;
+  }
+  if (field.requirement === "proof_of_fulfillment" && field.type !== "text" && field.type !== "text_with_files") {
     return <FileStack files={files} onChange={onFiles} />;
   }
 
@@ -492,14 +492,14 @@ function FileStack({ files, onChange }: { files: File[]; onChange: (files: File[
         <input
           ref={inputRef}
           type="file"
-          accept={FILE_ACCEPT}
+          accept={VERIFICATION_FILE_ACCEPT}
           multiple
           className="sr-only"
           onChange={(event) => add(event.target.files)}
         />
-        <span className="text-sm font-medium">Adicionar arquivos</span>
+        <span className="text-sm font-medium">{files.length === 0 ? "Clique para enviar" : "Adicionar outro arquivo"}</span>
         <span className="text-xs text-muted-foreground">
-          Escolha vários de uma vez ou acrescente mais depois. Vídeo MP4 entra junto com as fotos.
+          Vários de uma vez. Imagens (JPEG, PNG e outras), PDF ou vídeo (MP4 e outros).
         </span>
       </label>
       {files.length === 0 ? (
@@ -527,7 +527,7 @@ function FileStack({ files, onChange }: { files: File[]; onChange: (files: File[
         </ul>
       )}
       <p className="text-xs text-muted-foreground">
-        {files.length} de {MAX_FILES} arquivos · JPEG, PNG, PDF até 32 MB · vídeo MP4, MOV ou WEBM até 100 MB
+        {files.length} de {MAX_FILES} arquivos · imagens e PDF até 32 MB · vídeo até 100 MB
       </p>
       {notice ? <p className="text-sm text-destructive">{notice}</p> : null}
     </div>

@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { HttpError, requireSeller, toErrorResponse } from "@/lib/guards";
-import { getWhop, presenceFromAnswers, saveBusinessPresence } from "@/lib/whop";
-import { submitVerificationAnswers } from "@/lib/verification-submit";
+import { MAX_VERIFICATION_FILES } from "@/lib/verification-files";
+import { presenceFromAnswers, saveBusinessPresence } from "@/lib/whop";
+import {
+  assignVerificationAnswers,
+  loadOpenInformation,
+  submitVerificationAnswers,
+} from "@/lib/verification-submit";
+import { PROOF_FIELD_ID } from "@/lib/verification-tasks";
 
 const fileId = z.string().regex(/^file_[A-Za-z0-9]+$/);
 const schema = z.object({
@@ -12,10 +18,10 @@ const schema = z.object({
   answers: z
     .array(
       z.object({
-        id: z.string().regex(/^inrqi_[A-Za-z0-9]+$/),
+        id: z.string().regex(new RegExp(`^(inrqi_[A-Za-z0-9]+|${PROOF_FIELD_ID})$`)),
         value: z.string().max(4000).optional(),
         values: z.array(z.string().max(200)).max(20).optional(),
-        files: z.array(fileId).max(20).optional(),
+        files: z.array(fileId).max(MAX_VERIFICATION_FILES).optional(),
         address: z
           .object({
             line1: z.string().max(200),
@@ -44,33 +50,45 @@ export async function POST(request: Request) {
     if (!body.description && !body.socialUrl && answers.length === 0) {
       throw new HttpError(400, "Preencha a descrição, o perfil ou os pedidos da análise.");
     }
+    if (body.description && body.description.length < 100) {
+      throw new HttpError(400, "A descrição precisa ter entre 100 e 1000 caracteres.");
+    }
 
     let description = body.description;
     let socialUrl = body.socialUrl;
-    if (body.verificationId && answers.length > 0) {
-      const list = await getWhop().verifications.list({ account_id: user.whopBizId });
-      const verification = (list.data ?? []).find((item) => item.id === body.verificationId);
-      const copied = presenceFromAnswers(
-        (verification?.requested_information ?? []).map((item) => ({
-          id: item.id,
-          requirement: item.requirement,
-          label: item.label,
-          type: item.type,
-          responseType: item.response_type,
-        })),
-        answers,
-      );
+    if (answers.length > 0) {
+      const open = await loadOpenInformation(user.whopBizId);
+      const copied = presenceFromAnswers(open, answers);
       description = description || copied.description;
       socialUrl = socialUrl || copied.socialUrl;
     }
 
     await saveBusinessPresence(user.whopBizId, { description, socialUrl });
-    if (body.verificationId && answers.length > 0) {
-      await submitVerificationAnswers({
-        accountId: user.whopBizId,
-        verificationId: body.verificationId,
-        answers,
-      });
+    if (answers.length > 0) {
+      const open = await loadOpenInformation(user.whopBizId);
+      const assigned = assignVerificationAnswers(answers, open);
+      if (assigned.missingProof) {
+        throw new HttpError(
+          400,
+          description || socialUrl
+            ? "A descrição e o perfil foram salvos. A Whop ainda não abriu o pedido dos arquivos nesta conta. Atualize a página e envie as provas de novo."
+            : "A Whop ainda não abriu o pedido dos arquivos nesta conta. Atualize a página e envie as provas de novo.",
+        );
+      }
+      if (assigned.groups.length === 0) {
+        const hadRealAnswers = answers.some((answer) => answer.id !== PROOF_FIELD_ID);
+        if (!hadRealAnswers && (description || socialUrl)) {
+          return NextResponse.json({ ok: true });
+        }
+        throw new HttpError(400, "Não há informação pendente para enviar.");
+      }
+      for (const group of assigned.groups) {
+        await submitVerificationAnswers({
+          accountId: user.whopBizId,
+          verificationId: group.verificationId,
+          answers: group.answers,
+        });
+      }
     }
     return NextResponse.json({ ok: true });
   } catch (error) {

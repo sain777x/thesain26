@@ -1,3 +1,4 @@
+import { PROOF_FIELD_ID } from "@/lib/verification-tasks";
 import { getWhop, whopErrorMessage } from "@/lib/whop";
 
 const FILE_ID = /^file_[A-Za-z0-9]+$/;
@@ -31,6 +32,104 @@ const ID_SLOTS = new Set([
 
 function fileIds(values: string[] | undefined) {
   return (values ?? []).filter((value) => FILE_ID.test(value));
+}
+
+function wantsFiles(item: { type?: string | null; requirement?: string | null }) {
+  const type = (item.type ?? "").toLowerCase();
+  if (type === "files" || type === "file" || type === "document" || type === "documents") return true;
+  return item.requirement === "proof_of_fulfillment" && type !== "text" && type !== "text_with_files";
+}
+
+export type OpenInformation = {
+  verificationId: string;
+  id: string;
+  requirement: string;
+  label: string;
+  type: string;
+  responseType?: string | null;
+};
+
+function isProofItem(item: { requirement: string; label: string; type: string }) {
+  const text = `${item.requirement} ${item.label}`.toLowerCase();
+  if (item.requirement === "proof_of_fulfillment") return true;
+  if (/proof of fulfillment|prova de cumprimento/.test(text)) return true;
+  return item.requirement === "proof_of_funnel" && wantsFiles(item);
+}
+
+/** Lê de novo os pedidos abertos. O retrieve completa o que a lista às vezes omite. */
+export async function loadOpenInformation(accountId: string): Promise<OpenInformation[]> {
+  const client = getWhop();
+  const list = await client.verifications.list({ account_id: accountId });
+  const rows = await Promise.all(
+    (list.data ?? []).map(async (verification) => {
+      if (!verification.id || verification.status === "approved") return verification;
+      try {
+        const full = await client.verifications.retrieve({ id: verification.id });
+        if ((full.requested_information?.length ?? 0) >= (verification.requested_information?.length ?? 0)) {
+          return full;
+        }
+      } catch (error) {
+        console.error("[thesain26] verifications.retrieve", whopErrorMessage(error));
+      }
+      return verification;
+    }),
+  );
+
+  const items: OpenInformation[] = [];
+  for (const verification of rows) {
+    if (!verification.id || verification.status === "approved") continue;
+    for (const item of verification.requested_information ?? []) {
+      items.push({
+        verificationId: verification.id,
+        id: item.id,
+        requirement: item.requirement,
+        label: item.label,
+        type: item.type,
+        responseType: item.response_type,
+      });
+    }
+  }
+  return items;
+}
+
+export function assignVerificationAnswers(answers: VerificationAnswer[], open: OpenInformation[]) {
+  const byId = new Map(open.map((item) => [item.id, item]));
+  const groups = new Map<string, VerificationAnswer[]>();
+  let missingProof = false;
+
+  for (const answer of answers) {
+    if (answer.id === PROOF_FIELD_ID) {
+      const proof = open.find((item) => isProofItem(item));
+      const files = fileIds(answer.files);
+      if (!proof) {
+        if (files.length > 0) missingProof = true;
+        continue;
+      }
+      const bucket = groups.get(proof.verificationId) ?? [];
+      const existing = bucket.find((item) => item.id === proof.id);
+      if (existing) {
+        existing.files = [...fileIds(existing.files), ...files];
+      } else {
+        bucket.push({ ...answer, id: proof.id, files });
+      }
+      groups.set(proof.verificationId, bucket);
+      continue;
+    }
+
+    const item = byId.get(answer.id);
+    if (!item || !ITEM_ID.test(answer.id)) continue;
+    const bucket = groups.get(item.verificationId) ?? [];
+    bucket.push(answer);
+    groups.set(item.verificationId, bucket);
+  }
+
+  return {
+    missingProof,
+    groups: [...groups.entries()].map(([verificationId, grouped]) => ({
+      verificationId,
+      answers: grouped,
+    })),
+  };
 }
 
 export async function uploadPrivateFile(file: {
@@ -99,7 +198,7 @@ export async function submitVerificationAnswers(params: {
 
   const payload = requested.map((answer) => {
     const item = open.get(answer.id)!;
-    if (item.type === "files") {
+    if (wantsFiles(item)) {
       const files = fileIds(answer.files);
       if (files.length === 0) throw new Error(`Envie pelo menos um arquivo de “${item.label}”.`);
       return { id: item.id, files };
@@ -141,6 +240,9 @@ export async function submitVerificationAnswers(params: {
     }
     const value = answer.value?.trim() ?? "";
     if (!value) throw new Error(`Preencha “${item.label}”.`);
+    if (item.requirement === "business_description" && (value.length < 100 || value.length > 1000)) {
+      throw new Error("A descrição precisa ter entre 100 e 1000 caracteres.");
+    }
     if (item.type === "select" && item.options?.length && !item.options.includes(value)) {
       throw new Error(`A opção de “${item.label}” não é aceita.`);
     }

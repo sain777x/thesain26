@@ -10,6 +10,7 @@ import {
   buildVerificationDesk,
   isDescriptionRequest,
   isSocialRequest,
+  normalizeInformationType,
   type InformationInput,
   type VerificationDesk,
 } from "@/lib/verification-tasks";
@@ -376,21 +377,40 @@ export async function loadVerificationDesk(accountId: string): Promise<Verificat
   const account = accountResult.status === "fulfilled" ? accountResult.value : null;
   const information: InformationInput[] = [];
   const verifications: { kind?: string | null; status?: string | null }[] = [];
+  let openVerificationId = "";
 
   if (verificationsResult.status === "fulfilled") {
-    for (const verification of verificationsResult.value.data ?? []) {
+    const rows = await Promise.all(
+      (verificationsResult.value.data ?? []).map(async (verification) => {
+        if (!verification.id || verification.status === "approved") return verification;
+        try {
+          const full = await client.verifications.retrieve({ id: verification.id });
+          if ((full.requested_information?.length ?? 0) >= (verification.requested_information?.length ?? 0)) {
+            return full;
+          }
+        } catch (error) {
+          console.error("[thesain26] verifications.retrieve", whopErrorMessage(error));
+        }
+        return verification;
+      }),
+    );
+
+    for (const verification of rows) {
       verifications.push({ kind: verification.kind, status: verification.status });
-      if (verification.status === "approved") continue;
+      if (verification.status === "approved" || !verification.id) continue;
       const kind = verification.kind === "business" ? "business" : "individual";
       for (const item of verification.requested_information ?? []) {
-        if (!verification.id) continue;
         information.push({
           id: item.id,
           verificationId: verification.id,
           kind,
           label: item.label,
           requirement: item.requirement,
-          type: item.supporting_files_required && item.type === "text" ? "text_with_files" : item.type,
+          type: normalizeInformationType({
+            type: item.type,
+            requirement: item.requirement,
+            supportingFilesRequired: item.supporting_files_required,
+          }),
           actionUrl: item.action_url,
           optional: item.optional,
           options: item.options,
@@ -403,6 +423,13 @@ export async function loadVerificationDesk(accountId: string): Promise<Verificat
         });
       }
     }
+
+    openVerificationId =
+      information.find((item) => item.type === "files" || item.requirement === "proof_of_fulfillment")
+        ?.verificationId ||
+      information[0]?.verificationId ||
+      rows.find((item) => item.status === "action_required" && item.id)?.id ||
+      "";
   }
 
   const social =
@@ -425,6 +452,7 @@ export async function loadVerificationDesk(accountId: string): Promise<Verificat
     })),
     information,
     verifications,
+    openVerificationId,
     capabilities: {
       standardPayout: account?.capabilities?.standard_payout,
       cardIssuing: account?.capabilities?.card_issuing,
