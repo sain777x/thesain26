@@ -4,24 +4,37 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { VerificationForm } from "@/components/verification-form";
 import { ReloadAction } from "@/components/reload-action";
 import { appUrl } from "@/lib/app-url";
-import { kycReviewLabel } from "@/lib/format";
 import { requireSeller } from "@/lib/guards";
 import { prisma } from "@/lib/prisma";
-import {
-  listVerificationTasks,
-  openVerificationSession,
-  syncKycStatus,
-  whopErrorMessage,
-} from "@/lib/whop";
+import { loadVerificationDesk, openVerificationSession, syncKycStatus, whopErrorMessage } from "@/lib/whop";
 import {
   capabilityLabel,
-  categoryLabel,
   taskStatusLabel,
+  type IdentityLane,
+  type VerificationDesk,
   type VerificationTask,
 } from "@/lib/verification-tasks";
 import { cn } from "cn";
 
 export const dynamic = "force-dynamic";
+
+function statusLabel(status: string) {
+  switch (status) {
+    case "approved":
+      return "Aprovada";
+    case "pending":
+    case "processing":
+      return "Em andamento";
+    case "manual_review":
+      return "Em análise";
+    case "action_required":
+      return "Pendente";
+    case "rejected":
+      return "Recusada";
+    default:
+      return "Não iniciada";
+  }
+}
 
 function TaskResolve({
   task,
@@ -48,91 +61,76 @@ function TaskResolve({
       );
     }
     return (
-      <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Preencha aqui mesmo. Não precisa entrar na Whop nem sair da thesain26.
-        </p>
-        <iframe
-          title={task.title}
-          src={sessionUrl}
-          allow="camera; microphone; fullscreen"
-          className="h-[760px] w-full rounded-xl border bg-white"
-        />
-        <a href={`/painel/verificacoes?tarefa=${encodeURIComponent(task.id)}`} className="text-sm underline">
-          Já enviei, atualizar status
-        </a>
-      </div>
+      <iframe
+        title={task.title}
+        src={sessionUrl}
+        allow="camera; microphone; fullscreen"
+        className="h-[760px] w-full rounded-xl border bg-white"
+      />
     );
   }
   if (task.resolve.kind === "url") {
     const external = task.resolve.url.startsWith("http");
     return (
-      <div className="space-y-3">
-        {task.resolve.embed ? (
-          <iframe
-            title={task.title}
-            src={task.resolve.url}
-            allow="camera; microphone"
-            className="h-[640px] w-full rounded-xl border bg-white"
-          />
-        ) : (
-          <a
-            href={task.resolve.url}
-            className="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm text-primary-foreground"
-            {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
-          >
-            {task.resolve.label}
-          </a>
-        )}
-      </div>
+      <a
+        href={task.resolve.url}
+        className="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm text-primary-foreground"
+        {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
+      >
+        {task.resolve.label}
+      </a>
     );
   }
   return <p className="text-sm text-muted-foreground">{task.resolve.label}</p>;
 }
 
+function sectionHref(section: string) {
+  return `/painel/verificacoes?secao=${encodeURIComponent(section)}`;
+}
+
 export default async function VerificacoesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tarefa?: string }>;
+  searchParams: Promise<{ secao?: string }>;
 }) {
   const query = await searchParams;
-  let user = await requireSeller();
+  const user = await requireSeller();
   let error: string | null = null;
-  let tasks: VerificationTask[] = [];
+  let desk: VerificationDesk | null = null;
 
   const returnUrl = `${appUrl()}/verificacao/retorno`;
   const refreshUrl = `${appUrl()}/painel/verificacoes?onboarding=refresh`;
-
   const bizId = user.whopBizId;
+
   if (bizId) {
     try {
       const snapshot = await syncKycStatus(bizId);
-      user = await prisma.user.update({
+      await prisma.user.update({
         where: { id: user.id },
         data: {
           kycStatus: snapshot.status,
           kycDetail: snapshot.detail,
           kycCheckedAt: new Date(),
         },
-        include: { store: true },
       });
-      tasks = await listVerificationTasks(bizId, user.kycStatus);
+      desk = await loadVerificationDesk(bizId);
     } catch (caught) {
       error = whopErrorMessage(caught);
     }
   }
 
-  const openTasks = tasks.filter((task) => task.status !== "done");
-  const doneTasks = tasks.filter((task) => task.status === "done");
-  const selected =
-    tasks.find((task) => task.id === query.tarefa) ?? null;
-  const label = kycReviewLabel(user.kycStatus);
+  const section = query.secao ?? "";
+  const lane = desk?.identity.find((item) => item.kind === section) ?? null;
+  const extra = desk?.extras.find((item) => item.id === section) ?? null;
+  const showBusiness = section === "negocio" && Boolean(desk?.businessReview.open);
   let sessionUrl: string | null = null;
-  if (selected?.resolve.kind === "session" && user.whopBizId) {
+  const sessionKind = lane && lane.status !== "approved" ? lane.kind : extra?.resolve.kind === "session" ? extra.resolve.kindHint : null;
+
+  if (sessionKind && bizId) {
     try {
       sessionUrl = await openVerificationSession({
-        accountId: user.whopBizId,
-        kind: selected.resolve.kindHint,
+        accountId: bizId,
+        kind: sessionKind,
         returnUrl,
         refreshUrl,
       });
@@ -143,115 +141,223 @@ export default async function VerificacoesPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm text-muted-foreground">Conta Whop</p>
-          <h1 className="text-4xl">Verificações</h1>
-        </div>
-        <Badge variant={user.kycStatus === "verified" ? "default" : "outline"}>{label}</Badge>
+      <div>
+        <p className="text-sm text-muted-foreground">Conta Whop</p>
+        <h1 className="text-4xl">Verificações</h1>
       </div>
 
       {error ? (
-        <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
-        </p>
+        <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
       ) : null}
 
-      {!user.whopBizId ? (
+      {!bizId ? (
         <Card>
           <CardHeader>
             <CardTitle>Conta Whop ainda não conectada</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>
-              KYC, prova de vendas e pedidos extras aparecem aqui assim que a
-              connected account existir. Você escolhe qual resolver primeiro.
-            </p>
+            <p>A análise do negócio e as verificações aparecem aqui assim que a conta existir.</p>
             <ReloadAction href="/api/whop/connect">Conectar agora</ReloadAction>
           </CardContent>
         </Card>
+      ) : !desk ? (
+        <p className="text-sm text-muted-foreground">Não foi possível ler as verificações desta conta.</p>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_1fr]">
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              {openTasks.length === 0
-                ? "Nenhuma tarefa pendente."
-                : `${openTasks.length} ${openTasks.length === 1 ? "tarefa pendente" : "tarefas pendentes"}. Escolha qual resolver primeiro.`}
-            </p>
-            <ul className="space-y-2">
-              {tasks.map((task) => {
-                const active = selected?.id === task.id;
-                return (
+        <>
+          <section className="space-y-3">
+            <h2 className="text-lg">Ações necessárias</h2>
+            <div className="space-y-3">
+              {desk.businessReview.open ? (
+                <Link
+                  href={sectionHref("negocio")}
+                  className={cn(
+                    "block rounded-xl px-4 py-4 ring-1 ring-foreground/10",
+                    showBusiness ? "bg-primary text-primary-foreground" : "bg-card hover:bg-muted",
+                  )}
+                >
+                  <span className="flex items-start justify-between gap-3">
+                    <span>
+                      <span className="block font-medium">{desk.businessReview.title}</span>
+                      {desk.businessReview.affectsWithdrawals ? (
+                        <span className="mt-1 block text-sm opacity-80">Afeta saques</span>
+                      ) : null}
+                    </span>
+                    <span className="text-xs">
+                      {desk.businessReview.pendingReview ? "Em análise" : "Pendente"}
+                    </span>
+                  </span>
+                </Link>
+              ) : null}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Verificação de identidade e da empresa</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Veja o status, continue um pedido ou comece uma verificação nova.
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {desk.identity.map((item) => (
+                      <IdentityChoice key={item.kind} lane={item} active={section === item.kind} />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+
+          {showBusiness ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>{desk.businessReview.title}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">{desk.businessReview.description}</p>
+                <p className="text-sm text-muted-foreground">
+                  Você escolhe por onde começar. A análise do negócio fica disponível junto com a verificação individual e a empresarial.
+                </p>
+                {desk.businessReview.pendingReview ? (
+                  <p className="text-sm">A Whop está analisando o que você enviou.</p>
+                ) : (
+                  <BusinessReview desk={desk} />
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {lane ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>{lane.title}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Badge variant={lane.status === "approved" ? "default" : "outline"}>{statusLabel(lane.status)}</Badge>
+                {lane.status === "approved" ? (
+                  <p className="text-sm text-muted-foreground">Esta verificação já foi aprovada.</p>
+                ) : sessionUrl ? (
+                  <iframe
+                    title={lane.title}
+                    src={sessionUrl}
+                    allow="camera; microphone; fullscreen"
+                    className="h-[760px] w-full rounded-xl border bg-white"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Não foi possível abrir esta verificação agora. Atualize a página e tente de novo.
+                  </p>
+                )}
+                {lane.forms.map((task) =>
+                  task.resolve.kind === "form" ? (
+                    <VerificationForm
+                      key={task.id}
+                      verificationId={task.resolve.verificationId}
+                      fields={task.resolve.fields}
+                      label={task.resolve.label}
+                    />
+                  ) : null,
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {extra ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>{extra.title}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">{extra.description}</p>
+                <TaskResolve task={extra} sessionUrl={sessionUrl} />
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {desk.extras.length > 0 ? (
+            <section className="space-y-2">
+              <h2 className="text-lg">Outras pendências</h2>
+              <ul className="space-y-2">
+                {desk.extras.map((task) => (
                   <li key={task.id}>
-                    <Link
-                      href={`/painel/verificacoes?tarefa=${encodeURIComponent(task.id)}`}
-                      className={cn(
-                        "block rounded-xl px-3 py-3 ring-1 ring-foreground/10",
-                        active ? "bg-primary text-primary-foreground" : "bg-card hover:bg-muted",
-                        task.status === "done" && !active && "opacity-70",
-                      )}
-                    >
-                      <span className="flex items-start justify-between gap-3">
-                        <span>
-                          <span className="block text-xs opacity-80">{categoryLabel(task.category)}</span>
-                          <span className="mt-1 block text-sm font-medium">{task.title}</span>
-                        </span>
-                        <span className="shrink-0 text-xs">{taskStatusLabel(task.status)}</span>
-                      </span>
+                    <Link href={sectionHref(task.id)} className="block rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10">
+                      <span className="block text-sm font-medium">{task.title}</span>
+                      <span className="text-xs text-muted-foreground">{taskStatusLabel(task.status)}</span>
                     </Link>
                   </li>
-                );
-              })}
-            </ul>
-            {openTasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Provas de vendas e documentos extras entram nesta lista quando a Whop solicitar.
-              </p>
-            ) : null}
-          </div>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{selected ? selected.title : "Detalhe da tarefa"}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {selected ? (
-                <>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{categoryLabel(selected.category)}</Badge>
-                    <Badge variant={selected.status === "done" ? "secondary" : "outline"}>
-                      {taskStatusLabel(selected.status)}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{selected.description}</p>
-                  {selected.details.length > 0 ? (
-                    <ul className="list-disc space-y-1 pl-5 text-sm">
-                      {selected.details.map((detail) => (
-                        <li key={detail}>{detail}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {selected.blocked.length > 0 ? (
-                    <p className="text-sm">
-                      Enquanto isso estiver aberto, fica bloqueado:{" "}
-                      {selected.blocked.map(capabilityLabel).join(", ")}.
-                    </p>
-                  ) : null}
-                  <TaskResolve task={selected} sessionUrl={sessionUrl} />
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Selecione uma tarefa ao lado. KYC, prova de vendas e pedidos
-                  adicionais abrem separados, na ordem que você quiser.
-                  {doneTasks.length > 0
-                    ? ` ${doneTasks.length} já ${doneTasks.length === 1 ? "foi concluída" : "foram concluídas"}.`
-                    : ""}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+          <section className="space-y-3">
+            <h2 className="text-lg">Recursos</h2>
+            <ul className="divide-y rounded-xl bg-card ring-1 ring-foreground/10">
+              {desk.capabilities.map((row) => (
+                <li key={row.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                  <span>{row.label}</span>
+                  <span className="text-right text-muted-foreground">{row.hint}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
       )}
+    </div>
+  );
+}
+
+function IdentityChoice({ lane, active }: { lane: IdentityLane; active: boolean }) {
+  return (
+    <Link
+      href={sectionHref(lane.kind)}
+      className={cn(
+        "rounded-xl px-4 py-3 ring-1 ring-foreground/10",
+        active ? "bg-primary text-primary-foreground" : "bg-muted/40 hover:bg-muted",
+      )}
+    >
+      <span className="block text-sm font-medium">{lane.title}</span>
+      <span className="mt-1 block text-xs opacity-80">{statusLabel(lane.status)}</span>
+    </Link>
+  );
+}
+
+function BusinessReview({ desk }: { desk: VerificationDesk }) {
+  const review = desk.businessReview;
+  const forms = review.tasks.filter((task) => task.resolve.kind === "form");
+  const others = review.tasks.filter((task) => task.resolve.kind !== "form");
+  const profile = review.profile.askDescription || review.profile.askSocial ? review.profile : null;
+
+  if (forms.length === 0 && !profile) {
+    return <p className="text-sm text-muted-foreground">Nenhum campo pendente nesta análise.</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {forms.length > 0 ? (
+        forms.map((task, index) =>
+          task.resolve.kind === "form" ? (
+            <div key={task.id} className="space-y-3">
+              {forms.length > 1 ? <p className="text-sm font-medium">{task.title}</p> : null}
+              {task.blocked.length > 0 ? (
+                <p className="text-sm">
+                  Enquanto isso estiver aberto, fica bloqueado: {task.blocked.map(capabilityLabel).join(", ")}.
+                </p>
+              ) : null}
+              <VerificationForm
+                verificationId={task.resolve.verificationId}
+                fields={task.resolve.fields}
+                label={task.resolve.label}
+                profile={index === 0 ? profile : null}
+              />
+            </div>
+          ) : null,
+        )
+      ) : profile ? (
+        <VerificationForm fields={[]} label="Enviar informações" profile={profile} />
+      ) : null}
+      {others.map((task) => (
+        <TaskResolve key={task.id} task={task} sessionUrl={null} />
+      ))}
     </div>
   );
 }

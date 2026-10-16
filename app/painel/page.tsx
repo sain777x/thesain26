@@ -246,7 +246,7 @@ export default async function PainelPage({
           Ver loja
         </Link>
         <Link href="/painel/verificacoes" className={cn(buttonVariants({ variant: "outline" }), "h-10")}>
-          Completar KYC
+          Verificações
         </Link>
         <Link href="/painel/saldo" className={cn(buttonVariants({ variant: "outline" }), "h-10")}>
           Adicionar payout

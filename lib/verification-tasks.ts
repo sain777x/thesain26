@@ -57,6 +57,7 @@ export type RequiredActionInput = {
 
 export type InformationInput = InformationField & {
   verificationId: string;
+  kind?: "individual" | "business" | null;
 };
 
 export type DocumentInput = {
@@ -67,7 +68,6 @@ export type DocumentInput = {
   sessionUrl?: string | null;
 };
 
-const CATEGORY_ORDER: TaskCategory[] = ["kyc", "proof", "extra", "payout"];
 const STATUS_ORDER: TaskStatus[] = ["required", "not_started", "pending", "done"];
 
 export function categoryLabel(category: TaskCategory) {
@@ -383,26 +383,6 @@ export function buildVerificationTasks(input: {
     });
   }
 
-  const hasKyc = tasks.some((task) => task.category === "kyc");
-  if (!hasKyc && input.kycStatus !== "verified") {
-    tasks.unshift({
-      id: "kyc",
-      title: "Verificação de identidade (KYC)",
-      description:
-        input.kycStatus === "pending" || input.kycStatus === "action_required"
-          ? "A Whop ainda está analisando a identidade, ou pediu um complemento."
-          : "Ainda não iniciada. É a primeira etapa para a conta receber e sacar.",
-      category: "kyc",
-      status:
-        input.kycStatus === "pending" || input.kycStatus === "action_required"
-          ? "pending"
-          : "not_started",
-      details: [],
-      blocked: ["Saques ficam bloqueados até a Whop aprovar a identidade."],
-      resolve: sessionResolve("individual", "Resolver KYC"),
-    });
-  }
-
   if (input.kycStatus === "verified" && !tasks.some((task) => task.category === "kyc")) {
     tasks.push({
       id: "kyc-done",
@@ -416,9 +396,199 @@ export function buildVerificationTasks(input: {
     });
   }
 
-  return tasks.sort((a, b) => {
-    const status = STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
-    if (status !== 0) return status;
-    return CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category);
-  });
+  return tasks.sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
+}
+
+const IDENTITY_STATUS_RANK = [
+  "action_required",
+  "rejected",
+  "pending",
+  "processing",
+  "manual_review",
+  "not_started",
+  "approved",
+];
+
+export type IdentityLane = {
+  kind: "individual" | "business";
+  title: string;
+  status: string;
+  forms: VerificationTask[];
+};
+
+export type CapabilityRow = {
+  id: string;
+  label: string;
+  hint: string;
+};
+
+export type VerificationDesk = {
+  businessReview: {
+    open: boolean;
+    pendingReview: boolean;
+    affectsWithdrawals: boolean;
+    title: string;
+    description: string;
+    profile: {
+      description: string;
+      socialUrl: string;
+      askDescription: boolean;
+      askSocial: boolean;
+      descriptionRequired: boolean;
+      socialRequired: boolean;
+    };
+    tasks: VerificationTask[];
+  };
+  identity: IdentityLane[];
+  capabilities: CapabilityRow[];
+  extras: VerificationTask[];
+};
+
+export function isIdentityInformation(item: { requirement: string; label: string; type: string }) {
+  if (item.type === "liveness" || item.type === "id_document") return true;
+  return categoryFromText(`${item.requirement} ${item.label} ${item.type}`) === "kyc";
+}
+
+export function isDescriptionRequest(item: { requirement: string; label: string }) {
+  return /descri|about|sobre/.test(`${item.requirement} ${item.label}`.toLowerCase());
+}
+
+export function isSocialRequest(item: {
+  requirement: string;
+  label: string;
+  type?: string;
+  responseType?: string | null;
+}) {
+  if (item.responseType === "url" || item.type === "url") return true;
+  const requirement = item.requirement.toLowerCase();
+  const label = item.label.toLowerCase();
+  return /social|website|perfil|rede/.test(requirement) || /rede social|perfil|website|site ou/.test(label);
+}
+
+function latestStatus(statuses: string[]) {
+  const ranked = [...statuses].sort(
+    (left, right) => IDENTITY_STATUS_RANK.indexOf(left) - IDENTITY_STATUS_RANK.indexOf(right),
+  );
+  return ranked.find((status) => IDENTITY_STATUS_RANK.includes(status)) ?? statuses[0] ?? "not_started";
+}
+
+function capabilityHint(state: string | null | undefined, locked: string) {
+  if (state === "active") return "Liberado";
+  if (state === "pending") return "Em análise";
+  return locked;
+}
+
+/** Painel de verificações no formato da Whop: análise do negócio e identidade ficam independentes. */
+export function buildVerificationDesk(input: {
+  description: string;
+  socialUrl: string;
+  actions: RequiredActionInput[];
+  information: InformationInput[];
+  verifications: { kind?: string | null; status?: string | null }[];
+  capabilities: {
+    standardPayout?: string | null;
+    cardIssuing?: string | null;
+    bankDeposit?: string | null;
+    financing?: string | null;
+  };
+}): VerificationDesk {
+  const businessItems = input.information.filter((item) => !isIdentityInformation(item));
+  const identityItems = input.information.filter((item) => isIdentityInformation(item));
+  const businessTasks = buildVerificationTasks({
+    kycStatus: "verified",
+    requiredActions: [],
+    information: businessItems,
+    documents: [],
+  }).filter((task) => task.id !== "kyc-done");
+  const identityTasks = buildVerificationTasks({
+    kycStatus: "verified",
+    requiredActions: [],
+    information: identityItems,
+    documents: [],
+  }).filter((task) => task.id !== "kyc-done");
+
+  const review = input.actions.find((action) => action.action === "submit_information_request");
+  const reviewFields = businessTasks.flatMap((task) => (task.resolve.kind === "form" ? task.resolve.fields : []));
+  const descriptionCovered = reviewFields.some((field) => isDescriptionRequest(field));
+  const socialCovered = reviewFields.some((field) => isSocialRequest(field));
+  const reviewRequired = review?.status === "required";
+  const hasDescription = Boolean(input.description.trim());
+  const hasSocial = Boolean(input.socialUrl.trim());
+
+  const lanes: IdentityLane[] = (
+    [
+      { kind: "individual", title: "Verificação individual" },
+      { kind: "business", title: "Verificação empresarial" },
+    ] as const
+  ).map((lane) => ({
+    ...lane,
+    status: latestStatus(
+      input.verifications
+        .filter((item) => item.kind === lane.kind)
+        .map((item) => item.status || "not_started"),
+    ),
+    forms: identityTasks.filter((task) =>
+      input.information.some(
+        (item) => item.verificationId && task.id === `info-${item.verificationId}` && item.kind === lane.kind,
+      ),
+    ),
+  }));
+
+  return {
+    businessReview: {
+      open: Boolean(review) || businessTasks.length > 0,
+      pendingReview: review?.status === "pending" && businessTasks.length === 0,
+      affectsWithdrawals: Boolean(review),
+      title: "Análise do negócio",
+      description:
+        "Envie a descrição da empresa, o perfil de rede social ou o site, e os arquivos que a Whop pediu nesta análise.",
+      profile: {
+        description: input.description,
+        socialUrl: input.socialUrl,
+        askDescription: Boolean(reviewRequired && !descriptionCovered),
+        askSocial: Boolean(reviewRequired && !socialCovered),
+        descriptionRequired: Boolean(reviewRequired && !descriptionCovered && !hasDescription),
+        socialRequired: Boolean(reviewRequired && !socialCovered && !hasSocial),
+      },
+      tasks: businessTasks,
+    },
+    identity: lanes,
+    capabilities: [
+      {
+        id: "payouts",
+        label: "Saques",
+        hint: capabilityHint(input.capabilities.standardPayout, "Verificar identidade para liberar"),
+      },
+      {
+        id: "card",
+        label: "Cartão Whop",
+        hint: capabilityHint(input.capabilities.cardIssuing, "Verificar identidade para liberar"),
+      },
+      {
+        id: "bank",
+        label: "Depósitos bancários",
+        hint: capabilityHint(input.capabilities.bankDeposit, "Verificar identidade para liberar"),
+      },
+      {
+        id: "financing",
+        label: "Financiamento",
+        hint: capabilityHint(input.capabilities.financing, "Solicitar financiamento para liberar"),
+      },
+    ],
+    extras: input.actions
+      .filter((action) => action.action !== "verify_identity" && action.action !== "submit_information_request")
+      .map((action, index) => {
+        const fallback = actionFallback(action.action);
+        return {
+          id: `extra-${action.action}-${index}`,
+          title: action.title.trim() || fallback.title,
+          description: action.description.trim() || fallback.description,
+          category: fallback.category,
+          status: action.status === "pending" ? "pending" : "required",
+          details: [],
+          blocked: action.blocked,
+          resolve: resolveAction(action.action, fallback.category, action.cta, action.ctaLabel),
+        } satisfies VerificationTask;
+      }),
+  };
 }

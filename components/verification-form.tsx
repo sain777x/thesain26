@@ -115,10 +115,19 @@ export function VerificationForm({
   verificationId,
   fields,
   label,
+  profile,
 }: {
-  verificationId: string;
+  verificationId?: string;
   fields: InformationField[];
   label: string;
+  profile?: {
+    description: string;
+    socialUrl: string;
+    askDescription: boolean;
+    askSocial: boolean;
+    descriptionRequired: boolean;
+    socialRequired: boolean;
+  } | null;
 }) {
   const router = useRouter();
   const countries = listCountries();
@@ -195,10 +204,15 @@ export function VerificationForm({
         answers.push(answer);
       }
 
-      const response = await fetch("/api/whop/verifications/answer", {
+      const response = await fetch("/api/whop/business-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ verificationId, answers }),
+        body: JSON.stringify({
+          verificationId: verificationId || undefined,
+          answers,
+          description: profile?.askDescription ? String(form.get("profile.description") ?? "") : undefined,
+          socialUrl: profile?.askSocial ? String(form.get("profile.social") ?? "") : undefined,
+        }),
       });
       const data = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
@@ -224,6 +238,30 @@ export function VerificationForm({
 
   return (
     <form className="space-y-5" onSubmit={onSubmit}>
+      {profile?.askDescription ? (
+        <div className="space-y-2">
+          <Label htmlFor="profile.description">Descrição da empresa</Label>
+          <Textarea
+            id="profile.description"
+            name="profile.description"
+            defaultValue={profile.description}
+            required={profile.descriptionRequired}
+            placeholder="O que a empresa vende e para quem."
+          />
+        </div>
+      ) : null}
+      {profile?.askSocial ? (
+        <div className="space-y-2">
+          <Label htmlFor="profile.social">Perfil de rede social ou site</Label>
+          <Input
+            id="profile.social"
+            name="profile.social"
+            defaultValue={profile.socialUrl}
+            required={profile.socialRequired}
+            placeholder="https://instagram.com/sua-loja ou https://seusite.com"
+          />
+        </div>
+      ) : null}
       {fields.map((field) => (
         <fieldset key={field.id} className="space-y-2">
           <Label htmlFor={field.id}>
@@ -397,7 +435,28 @@ function FieldControl({
     );
   }
 
-  if (field.requirement === "business_description" || (field.type === "text" && field.label.length > 40)) {
+  if (
+    field.responseType === "url" ||
+    field.type === "url" ||
+    /social|website|perfil|rede/.test(field.requirement.toLowerCase())
+  ) {
+    return (
+      <Input
+        id={field.id}
+        name={field.id}
+        defaultValue=""
+        required={!field.optional}
+        placeholder="https://instagram.com/sua-loja ou https://seusite.com"
+      />
+    );
+  }
+
+  if (
+    /descri|about|sobre|source_of_wealth|proposed_use|explain/.test(
+      `${field.requirement} ${field.label}`.toLowerCase(),
+    ) ||
+    (field.type === "text" && field.label.length > 40)
+  ) {
     return <Textarea id={field.id} name={field.id} required={!field.optional} />;
   }
 

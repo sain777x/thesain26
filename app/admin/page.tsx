@@ -1,17 +1,17 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AccountStandingBadge, AdminTreasury, type TreasuryRow } from "@/components/admin-treasury";
+import { AccountStandingBadge, AdminTreasury, PlatformBalance, type TreasuryRow } from "@/components/admin-treasury";
 import { FeeForm, SellerFeeForm } from "@/components/admin-forms";
 import { formatDate, formatMoney, kycLabel } from "@/lib/format";
-import { loadSellerTreasury } from "@/lib/payouts";
+import { loadPlatformTreasury, loadSellerTreasury } from "@/lib/payouts";
 import { prisma } from "@/lib/prisma";
 import { getPlatformSettings } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
-  const [settings, sellers, sales, totals] = await Promise.all([
+  const [settings, sellers, sales, totals, platform] = await Promise.all([
     getPlatformSettings(),
     prisma.user.findMany({
       where: { role: "seller" },
@@ -31,6 +31,7 @@ export default async function AdminPage() {
       _sum: { applicationFee: true, amount: true },
       _count: true,
     }),
+    loadPlatformTreasury(),
   ]);
 
   const treasuryRows: TreasuryRow[] = await mapPool(sellers, 4, async (seller) => ({
@@ -90,6 +91,18 @@ export default async function AdminPage() {
             Um vendedor pode ter uma taxa própria.
           </p>
           <FeeForm feePercent={settings.feePercent} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Conta principal</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Saldo da conta Whop onde entram as comissões dos vendedores que vendem pelo site.
+          </p>
+          <PlatformBalance title={platform.title} treasury={platform.treasury} />
         </CardContent>
       </Card>
 

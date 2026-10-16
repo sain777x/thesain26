@@ -101,6 +101,13 @@ export function formatRelease(value: string | null | undefined) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
+  const dateOnly = /^\d{4}-\d{2}-\d{2}(?:T00:00:00(?:\.000)?Z)?$/.test(value);
+  if (dateOnly) {
+    return new Intl.DateTimeFormat("pt-BR", {
+      dateStyle: "short",
+      timeZone: "UTC",
+    }).format(date);
+  }
   const formatted = new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",

@@ -2,13 +2,16 @@ import { WhopClient, type Whop } from "@whop/sdk";
 import {
   buildSocialLinks,
   normalizeHttpUrl,
+  socialPlatform,
   toWhopClassification,
 } from "@/lib/business";
 import { applicationFeeAmount } from "@/lib/money";
 import {
-  buildVerificationTasks,
+  buildVerificationDesk,
+  isDescriptionRequest,
+  isSocialRequest,
   type InformationInput,
-  type VerificationTask,
+  type VerificationDesk,
 } from "@/lib/verification-tasks";
 
 /**
@@ -355,16 +358,11 @@ export async function syncKycStatus(accountId: string): Promise<KycSnapshot> {
 }
 
 /**
- * Pendências da conta, no mesmo espírito do painel da Whop.
- * `required_actions` é a lista oficial (KYC, pedido de informação, saque).
- * Cada `requested_information` vira uma tarefa própria para o vendedor
- * escolher qual resolver primeiro. Não inventamos prova de vendas:
- * ela só entra quando a Whop pede.
+ * Painel de verificações: análise do negócio e identidade abrem separadas.
+ * A descrição e o perfil entram na análise mesmo quando a Whop não devolve
+ * esses campos dentro de `requested_information`.
  */
-export async function listVerificationTasks(
-  accountId: string,
-  kycStatus: string,
-): Promise<VerificationTask[]> {
+export async function loadVerificationDesk(accountId: string): Promise<VerificationDesk> {
   const client = getWhop();
   const [accountResult, verificationsResult] = await Promise.allSettled([
     client.accounts.retrieve({ id: accountId }),
@@ -375,28 +373,24 @@ export async function listVerificationTasks(
     throw accountResult.reason;
   }
 
-  const actions =
-    accountResult.status === "fulfilled" ? (accountResult.value.required_actions ?? []) : [];
+  const account = accountResult.status === "fulfilled" ? accountResult.value : null;
   const information: InformationInput[] = [];
-  const documents: {
-    id: string;
-    document: string;
-    status?: string;
-    rejectionReason?: string | null;
-    sessionUrl?: string | null;
-  }[] = [];
+  const verifications: { kind?: string | null; status?: string | null }[] = [];
 
   if (verificationsResult.status === "fulfilled") {
     for (const verification of verificationsResult.value.data ?? []) {
+      verifications.push({ kind: verification.kind, status: verification.status });
       if (verification.status === "approved") continue;
+      const kind = verification.kind === "business" ? "business" : "individual";
       for (const item of verification.requested_information ?? []) {
         if (!verification.id) continue;
         information.push({
           id: item.id,
           verificationId: verification.id,
+          kind,
           label: item.label,
           requirement: item.requirement,
-          type: item.type,
+          type: item.supporting_files_required && item.type === "text" ? "text_with_files" : item.type,
           actionUrl: item.action_url,
           optional: item.optional,
           options: item.options,
@@ -408,22 +402,19 @@ export async function listVerificationTasks(
             .filter(Boolean),
         });
       }
-      for (const [index, document] of (verification.required_documents ?? []).entries()) {
-        if (!document.document) continue;
-        documents.push({
-          id: `${verification.id ?? "verification"}-${document.document}-${index}`,
-          document: document.document,
-          status: document.status,
-          rejectionReason: document.rejection_reason,
-          sessionUrl: verification.session_url,
-        });
-      }
     }
   }
 
-  return buildVerificationTasks({
-    kycStatus,
-    requiredActions: actions.map((action) => ({
+  const social =
+    account?.social_links?.find((link) => link.website !== "website")?.url ||
+    account?.website ||
+    account?.social_links?.[0]?.url ||
+    "";
+
+  return buildVerificationDesk({
+    description: account?.description ?? "",
+    socialUrl: social,
+    actions: (account?.required_actions ?? []).map((action) => ({
       action: action.action,
       title: action.title,
       description: action.description,
@@ -433,8 +424,64 @@ export async function listVerificationTasks(
       blocked: action.blocked_capabilities ?? [],
     })),
     information,
-    documents,
+    verifications,
+    capabilities: {
+      standardPayout: account?.capabilities?.standard_payout,
+      cardIssuing: account?.capabilities?.card_issuing,
+      bankDeposit: account?.capabilities?.bank_deposit,
+      financing: account?.capabilities?.accept_bnpl_payments,
+    },
   });
+}
+
+/** Grava descrição e perfil/site pedidos na análise do negócio. */
+export async function saveBusinessPresence(
+  accountId: string,
+  input: { description?: string; socialUrl?: string },
+) {
+  const client = getWhop();
+  const description = input.description?.trim();
+  const socialUrl = input.socialUrl?.trim() ? normalizeHttpUrl(input.socialUrl) : null;
+  if (input.socialUrl?.trim() && !socialUrl) {
+    throw new Error("Informe um site ou perfil com um endereço válido.");
+  }
+  if (!description && !socialUrl) return;
+
+  const account = await client.accounts.retrieve({ id: accountId });
+  const existing = (account.social_links ?? []).map((link) => ({
+    url: link.url,
+    website: link.website,
+    title: link.title || link.website,
+  }));
+  const socialLinks = [...existing];
+  if (socialUrl) {
+    for (const link of buildSocialLinks({ socialUrl })) {
+      if (!socialLinks.some((item) => item.url === link.url)) socialLinks.push(link);
+    }
+  }
+
+  await client.accounts.update({
+    id: accountId,
+    ...(description ? { description: description.slice(0, 1000) } : {}),
+    ...(socialUrl && socialPlatform(socialUrl) === "website" ? { website: socialUrl } : {}),
+    ...(socialUrl ? { social_links: socialLinks } : {}),
+  });
+}
+
+export function presenceFromAnswers(
+  items: { id: string; requirement: string; label: string; type: string; responseType?: string | null }[],
+  answers: { id: string; value?: string }[],
+) {
+  let description = "";
+  let socialUrl = "";
+  for (const answer of answers) {
+    const item = items.find((entry) => entry.id === answer.id);
+    const value = answer.value?.trim() ?? "";
+    if (!item || !value) continue;
+    if (!description && isDescriptionRequest(item)) description = value;
+    if (!socialUrl && isSocialRequest(item)) socialUrl = value;
+  }
+  return { description, socialUrl };
 }
 
 export type BalanceSnapshot = {

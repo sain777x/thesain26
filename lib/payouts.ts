@@ -41,11 +41,19 @@ export type AccountStanding = {
   notes: string[];
 };
 
+export type PendingSettlement = {
+  at: string;
+  amount: number;
+};
+
 export type SellerTreasury = {
   currency: string;
+  total: number;
   available: number;
   pendingNextDay: number;
   pendingReleaseAt: string | null;
+  pendingSettlements: PendingSettlement[];
+  reserveTotal: number;
   reserve14: number;
   reserve30: number;
   reserveOpen: number;
@@ -53,6 +61,12 @@ export type SellerTreasury = {
   withdrawing: number;
   standing: AccountStanding | null;
   error: string | null;
+};
+
+export type PlatformTreasury = {
+  id: string;
+  title: string;
+  treasury: SellerTreasury;
 };
 
 const PAYOUT_ACTIONS = new Set([
@@ -74,15 +88,43 @@ export function accountStanding(input: {
   status: string | null;
   statusReason: string | null;
   payments: string | null;
+  undated: string | null;
   actions: { action: string }[];
 }): AccountStanding {
+  const has = (action: string) => input.actions.some((item) => item.action === action);
+  const identity = has("verify_identity") || input.undated === "kyc_incomplete";
+  const missingInfo =
+    has("submit_information_request") || input.undated === "pending_information_request";
+  const payout =
+    input.actions.some((action) => PAYOUT_ACTIONS.has(action.action)) ||
+    input.undated === "update_payout_profile";
+  const compliance = input.undated === "compliance_review";
+  const blocked = input.undated === "withdrawals_disabled";
+  const held = has("review_held_payments");
   const notes: string[] = [];
-  const missingInfo = input.actions.some((action) => action.action === "submit_information_request");
+
+  if (identity) notes.push("Libera saques e gastos.");
   if (missingInfo) notes.push("Falta informação adicional");
+  if (payout) notes.push("Saque incompleto");
+  if (compliance) notes.push("Verificação em análise");
+  if (blocked) notes.push("Saques bloqueados");
+  if (held) notes.push("Pagamentos em espera");
   if (input.payments === "rejected") notes.push("Pagamentos recusados");
-  else if (input.payments === "pending" || input.payments === "monitoring") notes.push("Pagamentos em análise");
-  if (input.actions.some((action) => PAYOUT_ACTIONS.has(action.action))) notes.push("Saque incompleto");
-  if (input.actions.some((action) => action.action === "review_held_payments")) notes.push("Pagamentos em espera");
+  else if (
+    !identity &&
+    !missingInfo &&
+    !payout &&
+    !compliance &&
+    (input.payments === "pending" || input.payments === "monitoring")
+  ) {
+    notes.push("Pagamentos em análise");
+  }
+
+  const without = (label: string, tone: AccountStanding["tone"], drop: string): AccountStanding => ({
+    label,
+    tone,
+    notes: notes.filter((note) => note !== drop),
+  });
 
   if (input.status === "suspended") {
     const reason = suspensionReason(input.statusReason);
@@ -92,20 +134,13 @@ export function accountStanding(input: {
       notes: [reason, ...notes].filter((note): note is string => Boolean(note)),
     };
   }
-  if (missingInfo) {
-    return {
-      label: "Falta informação",
-      tone: "warn",
-      notes: notes.filter((note) => note !== "Falta informação adicional"),
-    };
-  }
-  if (input.payments === "rejected") {
-    return {
-      label: "Pagamentos recusados",
-      tone: "bad",
-      notes: notes.filter((note) => note !== "Pagamentos recusados"),
-    };
-  }
+  if (identity) return without("Verificação de identidade", "warn", "");
+  if (missingInfo) return without("Falta informação", "warn", "Falta informação adicional");
+  if (payout) return without("Saque incompleto", "warn", "Saque incompleto");
+  if (compliance) return without("Em análise", "warn", "Verificação em análise");
+  if (blocked) return without("Saques bloqueados", "bad", "Saques bloqueados");
+  if (input.payments === "rejected") return without("Pagamentos recusados", "bad", "Pagamentos recusados");
+  if (held) return without("Pagamentos em espera", "warn", "Pagamentos em espera");
   if (notes.length > 0) return { label: notes[0], tone: "warn", notes: notes.slice(1) };
   if (input.status === "active") return { label: "Ativa", tone: "ok", notes: [] };
   return { label: "Sem status", tone: "muted", notes: [] };
@@ -406,9 +441,12 @@ export async function sendPayout(params: {
 function emptyTreasury(currency: string, error: string | null): SellerTreasury {
   return {
     currency,
+    total: 0,
     available: 0,
     pendingNextDay: 0,
     pendingReleaseAt: null,
+    pendingSettlements: [],
+    reserveTotal: 0,
     reserve14: 0,
     reserve30: 0,
     reserveOpen: 0,
@@ -419,53 +457,165 @@ function emptyTreasury(currency: string, error: string | null): SellerTreasury {
   };
 }
 
-function nextRelease(candidates: string[], now: number) {
-  const future = candidates.filter((value) => new Date(value).getTime() >= now).sort();
-  if (future[0]) return future[0];
-  const recent = candidates
-    .filter((value) => now - new Date(value).getTime() < 36 * 3_600_000)
-    .sort();
-  return recent[recent.length - 1] ?? null;
+function decimal(value: string | number | null | undefined) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function settlementInstant(date: string) {
+  const day = date.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  return `${day}T00:00:00.000Z`;
+}
+
+function splitReserve(
+  total: number,
+  unlocks: { date: string; amount: string }[],
+  now: number,
+) {
+  let reserve14 = 0;
+  let reserve30 = 0;
+  let dated = 0;
+  for (const unlock of unlocks) {
+    const amount = decimal(unlock.amount);
+    const at = settlementInstant(unlock.date);
+    if (amount == null || amount <= 0 || !at) continue;
+    const when = new Date(at).getTime();
+    if (when <= now) continue;
+    const days = (when - now) / 86_400_000;
+    if (days <= 21) reserve14 += amount;
+    else reserve30 += amount;
+    dated += amount;
+  }
+  let reserveOpen = 0;
+  if (dated === 0) {
+    reserveOpen = total;
+  } else if (total > dated + 0.009) {
+    reserveOpen = total - dated;
+  } else if (dated > total + 0.009 && total > 0) {
+    const scale = total / dated;
+    reserve14 *= scale;
+    reserve30 *= scale;
+  }
+  return { reserve14, reserve30, reserveOpen };
+}
+
+function nextRelease(candidates: string[], today: string) {
+  return candidates.filter((value) => value.slice(0, 10) >= today).sort()[0] ?? null;
 }
 
 /**
- * Separa o saldo da connected account:
- * pendente do dia seguinte, reserva que libera em até 14 dias, reserva de 30 dias,
- * saques já pagos e saques ainda a caminho.
+ * Saldo como a Whop mostra na conta: disponível, pendente (com o dia da
+ * liberação) e reserva. A data do pendente vem de pending_settlements.
  */
 export async function loadSellerTreasury(accountId: string): Promise<SellerTreasury> {
   const client = getWhop();
   let accountStatus: string | null = null;
   let accountReason: string | null = null;
   let accountActions: { action: string }[] = [];
+  let undated: string | null = null;
+  let breakdown: {
+    available: string;
+    pending: string;
+    reserve: string;
+    pending_settlements: { amount: string; date: string }[];
+  } | null = null;
+  let balanceTotal: number | null = null;
+
   try {
     const account = await client.accounts.retrieve({ id: accountId });
     accountStatus = account.status;
     accountReason = account.status_reason;
     accountActions = account.required_actions ?? [];
+    undated = account.payment_controls?.undated_pending_reason ?? null;
+    const token =
+      account.balances.find((item) => item.symbol.toUpperCase() === "USD") ??
+      account.balances[0];
+    if (token) {
+      breakdown = token.breakdown;
+      balanceTotal = decimal(token.balance);
+    }
   } catch (error) {
     console.error("[thesain26] accounts.retrieve", whopErrorMessage(error));
   }
 
+  let ledgerError: string | null = null;
+  let payments: string | null = null;
+  let ledgerAvailable: number | null = null;
+  let ledgerPending: number | null = null;
+  let ledgerReserve: number | null = null;
+  let currency = "usd";
   try {
     const ledger = await client.ledgerAccounts.retrieve({ id: accountId });
-    const standing = accountStanding({
-      status: accountStatus,
-      statusReason: accountReason,
-      payments: ledger.payments_approval_status,
-      actions: accountActions,
-    });
-    const usd =
-      ledger.balances.find((item) => item.currency === "usd") ?? ledger.balances[0];
-    const currency = usd?.currency ?? "usd";
-    const available = usd?.balance ?? 0;
-    const pending = usd?.pending_balance ?? 0;
-    const reserve = usd?.reserve_balance ?? 0;
-    const today = new Date().toISOString().slice(0, 10);
+    payments = ledger.payments_approval_status;
+    const usd = ledger.balances.find((item) => item.currency === "usd") ?? ledger.balances[0];
+    currency = usd?.currency ?? "usd";
+    ledgerAvailable = usd?.balance ?? 0;
+    ledgerPending = usd?.pending_balance ?? 0;
+    ledgerReserve = usd?.reserve_balance ?? 0;
+  } catch (error) {
+    ledgerError = whopErrorMessage(error);
+    console.error("[thesain26] ledgerAccounts.retrieve", ledgerError);
+  }
 
-    let reserve14 = 0;
-    let reserve30 = 0;
-    const releaseCandidates: string[] = [];
+  if (!breakdown && ledgerAvailable == null) {
+    const fallback = emptyTreasury("usd", ledgerError ?? "Não foi possível ler o saldo.");
+    if (accountStatus || accountReason || accountActions.length > 0 || undated) {
+      fallback.standing = accountStanding({
+        status: accountStatus,
+        statusReason: accountReason,
+        payments,
+        undated,
+        actions: accountActions,
+      });
+    }
+    return fallback;
+  }
+
+  const available = decimal(breakdown?.available) ?? ledgerAvailable ?? 0;
+  const pending = decimal(breakdown?.pending) ?? ledgerPending ?? 0;
+  const reserveTotal = decimal(breakdown?.reserve) ?? ledgerReserve ?? 0;
+  const total = balanceTotal ?? available + pending + reserveTotal;
+  const standing = accountStanding({
+    status: accountStatus,
+    statusReason: accountReason,
+    payments,
+    undated,
+    actions: accountActions,
+  });
+  const pendingSettlements = (breakdown?.pending_settlements ?? [])
+    .map((item) => {
+      const at = settlementInstant(item.date);
+      const amount = decimal(item.amount);
+      if (!at || amount == null || amount <= 0) return null;
+      return { at, amount };
+    })
+    .filter((item): item is PendingSettlement => Boolean(item))
+    .sort((left, right) => left.at.localeCompare(right.at));
+
+  const now = Date.now();
+  const today = new Date(now).toISOString().slice(0, 10);
+  const upcomingSettlements = pendingSettlements.filter((item) => item.at.slice(0, 10) >= today);
+  let unlocks: { date: string; amount: string }[] = [];
+  if (reserveTotal > 0) {
+    try {
+      const reserves = await client.accounts.reserves.list({ account_id: accountId });
+      const row =
+        reserves.data.find((item) => item.currency === currency) ?? reserves.data[0];
+      unlocks = row?.unlocks_by_date ?? [];
+    } catch (error) {
+      console.error("[thesain26] accounts.reserves.list", whopErrorMessage(error));
+    }
+  }
+  const { reserve14, reserve30, reserveOpen } = splitReserve(reserveTotal, unlocks, now);
+  const reserveDays = new Set(
+    unlocks.map((item) => item.date.slice(0, 10)).filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)),
+  );
+
+  let pendingReleaseAt = pending > 0 ? nextRelease(upcomingSettlements.map((item) => item.at), today) : null;
+  if (pending > 0 && !pendingReleaseAt) {
     try {
       const activity = await client.financialActivity.list({
         account_id: accountId,
@@ -475,40 +625,23 @@ export async function loadSellerTreasury(accountId: string): Promise<SellerTreas
         include_resource: false,
         limit: 100,
       });
-      const now = Date.now();
+      const candidates: string[] = [];
       for (const row of activity.data) {
         if (!row.available_at) continue;
-        const when = new Date(row.available_at).getTime();
-        if (!Number.isFinite(when)) continue;
-        const amount = activityValue(row);
-        if (amount <= 0) continue;
-        const days = (when - now) / 86_400_000;
-        if (days <= 2) {
-          if (days > -1.5) releaseCandidates.push(row.available_at);
-          continue;
-        }
-        if (when <= now) continue;
-        if (days <= 21) reserve14 += amount;
-        else reserve30 += amount;
+        const day = row.available_at.slice(0, 10);
+        if (day <= today || reserveDays.has(day)) continue;
+        if (activityValue(row) <= 0) continue;
+        candidates.push(settlementInstant(day) ?? row.available_at);
       }
+      pendingReleaseAt = nextRelease(candidates, today);
     } catch (error) {
       console.error("[thesain26] financialActivity.list", whopErrorMessage(error));
     }
+  }
 
-    const dated = reserve14 + reserve30;
-    let reserveOpen = 0;
-    if (reserve > dated + 0.009) {
-      reserveOpen = reserve - dated;
-    } else if (dated > reserve + 0.009 && reserve > 0 && dated > 0) {
-      const scale = reserve / dated;
-      reserve14 *= scale;
-      reserve30 *= scale;
-    } else if (dated === 0) {
-      reserveOpen = reserve;
-    }
-
-    let withdrawn = 0;
-    let withdrawing = 0;
+  let withdrawn = 0;
+  let withdrawing = 0;
+  try {
     let page = await client.payouts.list({ account_id: accountId, first: 50 });
     for (let index = 0; index < 3; index += 1) {
       for (const item of page.data) {
@@ -519,32 +652,46 @@ export async function loadSellerTreasury(accountId: string): Promise<SellerTreas
       if (!page.hasNextPage()) break;
       page = await page.getNextPage();
     }
+  } catch (error) {
+    console.error("[thesain26] payouts.list", whopErrorMessage(error));
+  }
 
-    const now = Date.now();
+  return {
+    currency,
+    total,
+    available,
+    pendingNextDay: pending,
+    pendingReleaseAt,
+    pendingSettlements: upcomingSettlements,
+    reserveTotal,
+    reserve14,
+    reserve30,
+    reserveOpen,
+    withdrawn,
+    withdrawing,
+    standing,
+    error: null,
+  };
+}
+
+/** Conta Whop da plataforma, onde caem as comissões dos vendedores. */
+export async function loadPlatformTreasury(): Promise<PlatformTreasury> {
+  try {
+    const client = getWhop();
+    const me = await client.accounts.me();
+    const id = me.parent_account?.id && me.parent_account.id !== me.id ? me.parent_account.id : me.id;
+    const account = id === me.id ? me : await client.accounts.retrieve({ id });
     return {
-      currency,
-      available,
-      pendingNextDay: pending,
-      pendingReleaseAt: pending > 0 ? nextRelease(releaseCandidates, now) : null,
-      reserve14,
-      reserve30,
-      reserveOpen,
-      withdrawn,
-      withdrawing,
-      standing,
-      error: null,
+      id,
+      title: account.title || "Conta principal",
+      treasury: await loadSellerTreasury(id),
     };
   } catch (error) {
-    const fallback = emptyTreasury("usd", whopErrorMessage(error));
-    if (accountStatus || accountReason || accountActions.length > 0) {
-      fallback.standing = accountStanding({
-        status: accountStatus,
-        statusReason: accountReason,
-        payments: null,
-        actions: accountActions,
-      });
-    }
-    return fallback;
+    return {
+      id: "",
+      title: "Conta principal",
+      treasury: emptyTreasury("usd", whopErrorMessage(error)),
+    };
   }
 }
 
