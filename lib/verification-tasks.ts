@@ -495,56 +495,6 @@ export function isUploadField(field: { type: string }) {
   );
 }
 
-function proofField(): InformationField {
-  return {
-    id: PROOF_FIELD_ID,
-    label: "Prova de cumprimento",
-    requirement: "proof_of_fulfillment",
-    type: "files",
-    optional: true,
-    detailsLabel:
-      "Opcional, se você já tiver o comprovante. Imagens (JPEG, PNG e outras), PDF ou vídeo. A descrição e o perfil seguem mesmo sem arquivo.",
-  };
-}
-
-function withProofUpload(tasks: VerificationTask[], reviewRequired: boolean, verificationId: string) {
-  if (!reviewRequired) return tasks;
-  const hasUpload = tasks.some(
-    (task) => task.resolve.kind === "form" && task.resolve.fields.some((field) => isUploadField(field)),
-  );
-  if (hasUpload) return tasks;
-
-  const field = proofField();
-  const index = tasks.findIndex((task) => task.resolve.kind === "form");
-  if (index >= 0) {
-    const task = tasks[index];
-    if (task.resolve.kind !== "form") return tasks;
-    const next = [...tasks];
-    next[index] = {
-      ...task,
-      resolve: { ...task.resolve, fields: [...task.resolve.fields, field] },
-    };
-    return next;
-  }
-
-  const task: VerificationTask = {
-    id: verificationId ? `info-${verificationId}-proof` : "info-proof",
-    title: "Prova de cumprimento",
-    description: "Envie os arquivos que a análise pediu junto com a descrição e o perfil.",
-    category: "proof",
-    status: "required",
-    details: [field.detailsLabel ?? ""],
-    blocked: [],
-    resolve: {
-      kind: "form",
-      verificationId,
-      label: "Enviar informações",
-      fields: [field],
-    },
-  };
-  return [...tasks, task];
-}
-
 function latestStatus(statuses: string[]) {
   const ranked = [...statuses].sort(
     (left, right) => IDENTITY_STATUS_RANK.indexOf(left) - IDENTITY_STATUS_RANK.indexOf(right),
@@ -590,13 +540,7 @@ export function buildVerificationDesk(input: {
   }).filter((task) => task.id !== "kyc-done");
 
   const review = input.actions.find((action) => action.action === "submit_information_request");
-  const reviewFields = businessTasks.flatMap((task) => (task.resolve.kind === "form" ? task.resolve.fields : []));
-  const descriptionCovered = reviewFields.some((field) => isDescriptionRequest(field));
-  const socialCovered = reviewFields.some((field) => isSocialRequest(field));
-  const reviewRequired = review?.status === "required";
-  const hasDescription = Boolean(input.description.trim());
-  const hasSocial = Boolean(input.socialUrl.trim());
-  const tasks = withProofUpload(businessTasks, reviewRequired, input.openVerificationId ?? "");
+  const tasks = businessTasks;
 
   const lanes: IdentityLane[] = (
     [
@@ -624,15 +568,17 @@ export function buildVerificationDesk(input: {
       affectsWithdrawals: Boolean(review),
       title: "Análise do negócio",
       description:
-        "Responda a descrição e o perfil nesta página. O envio vai direto para o pedido da Whop, sem abrir o painel deles.",
+        tasks.length > 0
+          ? "A Whop está pedindo só o que está neste formulário, lido agora. Não envie prova, imposto ou outro campo que não apareça aqui."
+          : "A análise segue pendente, mas a Whop ainda não devolveu as perguntas. Atualize a página para ler o pedido de novo.",
       profile: {
         description: input.description,
         socialUrl: input.socialUrl,
-        askDescription: Boolean(reviewRequired && !descriptionCovered),
-        askSocial: Boolean(reviewRequired && !socialCovered),
-        descriptionRequired: Boolean(reviewRequired && !descriptionCovered && !hasDescription),
-        socialRequired: Boolean(reviewRequired && !socialCovered && !hasSocial),
-        askTax: Boolean(reviewRequired && !input.taxRemittedBy),
+        askDescription: false,
+        askSocial: false,
+        descriptionRequired: false,
+        socialRequired: false,
+        askTax: false,
         taxHandling: input.taxRemittedBy ?? null,
       },
       tasks,

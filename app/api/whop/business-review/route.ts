@@ -6,7 +6,6 @@ import { presenceFromAnswers, saveBusinessPresence } from "@/lib/whop";
 import {
   assignVerificationAnswers,
   loadOpenInformation,
-  loadOpenInformationUntilProof,
   submitVerificationAnswers,
 } from "@/lib/verification-submit";
 import { PROOF_FIELD_ID } from "@/lib/verification-tasks";
@@ -66,60 +65,52 @@ export async function POST(request: Request) {
       throw new HttpError(400, "Confirme as três declarações para cuidar do imposto por conta própria.");
     }
 
-    let description = body.description;
-    let socialUrl = body.socialUrl;
-    const hasFiles = answers.some((answer) => (answer.files?.length ?? 0) > 0);
-    let before: Awaited<ReturnType<typeof loadOpenInformation>> = [];
-    if (answers.length > 0) {
-      before = await loadOpenInformation(user.whopBizId);
-      const copied = presenceFromAnswers(before, answers);
-      description = description || copied.description;
-      socialUrl = socialUrl || copied.socialUrl;
-    }
-    await saveBusinessPresence(user.whopBizId, {
-      description,
-      socialUrl,
-      taxRemittedBy: body.taxHandling,
-    });
-    if (answers.length > 0) {
-      const refreshed = hasFiles || body.taxHandling
-        ? await loadOpenInformationUntilProof(user.whopBizId)
-        : await loadOpenInformation(user.whopBizId);
-      const refreshedHasProof = refreshed.some(
-        (item) => item.requirement === "proof_of_fulfillment" || /proof of fulfillment|prova de cumprimento/i.test(item.label),
+    const before = await loadOpenInformation(user.whopBizId);
+    const copied = presenceFromAnswers(before, answers);
+    const description = body.description || copied.description;
+    const socialUrl = body.socialUrl || copied.socialUrl;
+    const assigned = assignVerificationAnswers(answers, before);
+    if (assigned.groups.length === 0) {
+      const pending = before
+        .filter((item) => item.id !== PROOF_FIELD_ID)
+        .map((item) => item.label)
+        .filter(Boolean);
+      throw new HttpError(
+        400,
+        pending.length
+          ? `A Whop ainda está pedindo: ${pending.join(" · ")}. Atualize a página e responda só esses campos.`
+          : "Não há pergunta aberta na Whop para enviar.",
       );
-      const seen = new Set(refreshed.map((item) => item.id));
-      const open = refreshedHasProof ? refreshed : [...refreshed, ...before.filter((item) => !seen.has(item.id))];
-      const assigned = assignVerificationAnswers(answers, open);
-      if (assigned.groups.length === 0) {
-        const hadRealAnswers = answers.some((answer) => answer.id !== PROOF_FIELD_ID);
-        if (!hadRealAnswers && (description || socialUrl)) {
-          return NextResponse.json({ ok: true });
-        }
-        if (assigned.missingProof) {
-          throw new HttpError(
-            400,
-            "A Whop ainda não abriu o pedido dos arquivos. Envie a descrição e o perfil; os arquivos entram quando esse item aparecer.",
-          );
-        }
-        throw new HttpError(400, "Não há informação pendente para enviar.");
-      }
-      for (const group of assigned.groups) {
-        await submitVerificationAnswers({
-          accountId: user.whopBizId,
-          verificationId: group.verificationId,
-          answers: group.answers,
-        });
-      }
-      if (assigned.missingProof) {
-        return NextResponse.json({
-          ok: true,
-          warning:
-            "A descrição e o perfil foram enviados. A Whop ainda não abriu o pedido dos arquivos, então eles não foram anexados.",
-        });
-      }
     }
-    return NextResponse.json({ ok: true });
+
+    for (const group of assigned.groups) {
+      await submitVerificationAnswers({
+        accountId: user.whopBizId,
+        verificationId: group.verificationId,
+        answers: group.answers,
+      });
+    }
+
+    try {
+      await saveBusinessPresence(user.whopBizId, {
+        description,
+        socialUrl,
+        taxRemittedBy: body.taxHandling,
+      });
+    } catch (error) {
+      console.error("[thesain26] saveBusinessPresence", error);
+    }
+
+    const touched = new Set(assigned.groups.map((group) => group.verificationId));
+    const after = await loadOpenInformation(user.whopBizId);
+    const stillOpen = after.filter((item) => touched.has(item.verificationId));
+    if (stillOpen.length > 0) {
+      throw new HttpError(
+        409,
+        `A Whop ainda está pedindo: ${stillOpen.map((item) => item.label).join(" · ")}. Responda só o que continua na tela.`,
+      );
+    }
+    return NextResponse.json({ ok: true, answered: true });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Revise os campos e envie de novo." }, { status: 400 });

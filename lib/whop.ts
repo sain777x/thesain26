@@ -378,8 +378,7 @@ export async function syncKycStatus(accountId: string): Promise<KycSnapshot> {
 
 /**
  * Painel de verificações: análise do negócio e identidade abrem separadas.
- * A descrição e o perfil entram na análise mesmo quando a Whop não devolve
- * esses campos dentro de `requested_information`.
+ * O formulário do negócio mostra só o `requested_information` aberto agora.
  */
 export async function loadVerificationDesk(accountId: string): Promise<VerificationDesk> {
   const client = getWhop();
@@ -440,11 +439,7 @@ export async function loadVerificationDesk(accountId: string): Promise<Verificat
           options: item.options,
           responseType: item.response_type,
           selectionMode: item.selection_mode,
-          detailsLabel:
-            item.details_label ||
-            (requirement === "proof_of_fulfillment"
-              ? "Mostre o que o comprador recebeu depois da compra. Envie imagens, PDF ou vídeo. Pode mandar vários arquivos, inclusive 6 ou mais."
-              : undefined),
+          detailsLabel: item.details_label,
           errors: reasons,
         });
       }

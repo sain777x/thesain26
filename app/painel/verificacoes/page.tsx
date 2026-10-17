@@ -357,14 +357,13 @@ function BusinessReview({
   return (
     <div className="space-y-6">
       {forms.length > 0 ? (
-        forms.map((task, index) =>
+        forms.map((task) =>
           task.resolve.kind === "form" ? (
             <VerificationForm
-              key={task.id}
+              key={task.resolve.fields.map((field) => field.id).join(",")}
               verificationId={task.resolve.verificationId}
               fields={[...task.resolve.fields].sort((left, right) => answerOrder(left) - answerOrder(right))}
               label={task.resolve.label}
-              profile={index === 0 ? review.profile : null}
             />
           ) : null,
         )
@@ -372,7 +371,7 @@ function BusinessReview({
         <VerificationForm fields={[]} label="Enviar informações" profile={review.profile} />
       ) : (
         <p className="text-sm text-muted-foreground">
-          Não há formulário pendente nesta seção agora. Atualize a página se a pendência continuar na lista.
+          Nenhuma pergunta aberta chegou da Whop nesta leitura. Atualize a página antes de enviar qualquer coisa.
         </p>
       )}
       {portalUrl ? (

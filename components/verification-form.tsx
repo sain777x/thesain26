@@ -116,7 +116,7 @@ export function VerificationForm({
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [idTypes, setIdTypes] = useState<Record<string, string>>({});
   const [attachments, setAttachments] = useState<Record<string, File[]>>({});
   const [taxChoice, setTaxChoice] = useState<"self" | "whop" | "none" | "">("");
@@ -230,16 +230,15 @@ export function VerificationForm({
               : undefined,
         }),
       });
-      const data = (await response.json().catch(() => ({}))) as { error?: string; warning?: string };
-      if (!response.ok) {
-        throw new Error(data.error ?? "A análise não aceitou as respostas.");
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        warning?: string;
+        answered?: boolean;
+      };
+      if (!response.ok || !data.answered) {
+        throw new Error(data.error ?? data.warning ?? "A Whop ainda não confirmou estas respostas.");
       }
-      if (data.warning) {
-        setError(data.warning);
-        router.refresh();
-        return;
-      }
-      setDone(true);
+      setNotice("A Whop confirmou estas respostas.");
       router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Não foi possível enviar.");
@@ -247,14 +246,6 @@ export function VerificationForm({
       setPending(false);
       setProgress(null);
     }
-  }
-
-  if (done) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Informações enviadas. A análise segue daqui. Atualize esta página se o pedido continuar na lista.
-      </p>
-    );
   }
 
   return (
@@ -307,6 +298,7 @@ export function VerificationForm({
           />
         </fieldset>
       ))}
+      {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <Button type="submit" className="h-10 px-4" disabled={pending}>
         {pending ? progress ?? "Enviando…" : label}
@@ -435,7 +427,6 @@ function CountedText({ name, required }: { name: string; required: boolean }) {
         required={required || count < 100}
         minLength={100}
         maxLength={1000}
-        placeholder="Descreva o que você vende e como o comprador recebe"
       />
       <p className={count < 100 ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
         {count}/100 caracteres no mínimo · até 1000
