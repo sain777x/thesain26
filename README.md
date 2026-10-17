@@ -5,7 +5,7 @@ Marketplace de produtos digitais em cima da Whop (Whop for Platforms). Vendedore
 ## O que a plataforma faz
 
 - Cadastro do vendedor com nome, loja, descrição, site ou rede, tipo de negócio, indústria e país. A Connected Account nasce na Whop e o perfil segue por `accounts.update`.
-- Análise do negócio em `/painel/verificacoes?secao=negocio`. Se a Whop devolver as perguntas, o formulário é local. Se a lista vier vazia, o card abre a aba Verificações da Whop em outra aba. O KYC continua no iframe de identidade (`account_onboarding`), separado dessa pendência.
+- Análise do negócio em `/painel/verificacoes?secao=negocio`. Se a Whop devolver as perguntas, o formulário é local. Se a lista vier vazia, o pedido abre no componente da Whop, autenticado pela plataforma, sem login no painel. O KYC continua no iframe de identidade (`account_onboarding`), separado dessa pendência.
 - Identidade em `/painel/verificacoes`, com Account Link (`use_case: account_onboarding`) embutido. Saque continua no `payouts_portal`.
 - Saldo, reserva, carteiras e saque na própria página `/painel/saldo`, sem sair do site. O admin vê pendente do dia seguinte, reservas de 14 e 30 dias, e o que já foi sacado.
 - Vendas listadas ao abrir a página (webhook em tempo real e sincronização de fallback), com filtro e CSV.

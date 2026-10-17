@@ -568,12 +568,12 @@ export function buildVerificationDesk(input: {
       id: "business-review-rfi",
       title: "Informações atualizadas do negócio",
       description:
-        "A Whop pediu informações atualizadas do negócio. Preencha no formulário oficial (descrição + rede social, depois as provas em JPG/PDF). Os saques voltam depois da análise (geralmente menos de 24h). As vendas continuam.",
+        "A Whop pediu informações atualizadas do negócio. Preencha no formulário abaixo, já autenticado — sem login no painel da Whop. Os saques voltam depois da análise (geralmente menos de 24h). As vendas continuam.",
       category: "extra",
       status: review.status === "pending" ? "pending" : "required",
       details: [
-        "Abre a aba Verificações da Whop, onde está o formulário desta pendência.",
-        "Ao terminar lá, volte para esta página e clique em Atualizar.",
+        "O formulário oficial abre nesta página (descrição, rede social e as provas).",
+        "Ao terminar, clique em Atualizar.",
       ],
       blocked: review.blocked,
       resolve: reviewUrl
@@ -591,7 +591,7 @@ export function buildVerificationDesk(input: {
       description: hasBusinessForm
         ? "A Whop está pedindo só o que está neste formulário, lido agora. Não envie prova, imposto ou outro campo que não apareça aqui."
         : review
-          ? "A Whop pediu informações atualizadas do negócio. Escolha abaixo por qual pendência começar."
+          ? "A Whop pediu informações atualizadas do negócio. Responda no formulário abaixo, sem sair da thesain26."
           : "A análise segue pendente, mas a Whop ainda não devolveu as perguntas. Atualize a página para ler o pedido de novo.",
       profile: {
         description: input.description,

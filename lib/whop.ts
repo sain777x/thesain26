@@ -560,13 +560,15 @@ export async function getAccountBalance(accountId: string): Promise<BalanceSnaps
 }
 
 /**
- * Token curto para os Whop Elements (Wallet / BalanceElement) lerem o saldo
- * da connected account no domínio da thesain26.
+ * Token curto para os Whop Elements.
+ * Sem escopo, herda a chave da plataforma (carteira).
+ * Com escopo, vale só o que a lista pede (pendências de identidade).
  */
-export async function createElementsToken(accountId: string) {
+export async function createElementsToken(accountId: string, scopedActions?: string[]) {
   const client = getWhop();
   const access = await client.accessTokens.create({
     account_id: accountId,
+    ...(scopedActions?.length ? { scoped_actions: scopedActions } : {}),
   });
   if (!access.token) {
     throw new Error("A Whop não devolveu o access token.");

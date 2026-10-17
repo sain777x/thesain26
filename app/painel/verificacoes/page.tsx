@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BusinessRfi } from "@/components/business-rfi";
 import { VerificationForm } from "@/components/verification-form";
 import { ReloadAction } from "@/components/reload-action";
 import { appUrl } from "@/lib/app-url";
@@ -296,7 +297,9 @@ export default async function VerificacoesPage({
                         ))}
                       </ul>
                     ) : null}
-                    {task.resolve.kind === "form" ? (
+                    {task.id === "business-review-rfi" && bizId ? (
+                      <BusinessRfi accountId={bizId} />
+                    ) : task.resolve.kind === "form" ? (
                       <VerificationForm
                         verificationId={task.resolve.verificationId}
                         fields={[...task.resolve.fields].sort(
