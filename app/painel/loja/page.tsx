@@ -37,6 +37,10 @@ export default async function LojaEditorPage() {
               businessType: user.store.businessType,
               industryType: user.store.industryType,
               country: user.store.country,
+              addressLine1: user.store.addressLine1 ?? "",
+              addressCity: user.store.addressCity ?? "",
+              addressState: user.store.addressState ?? "",
+              addressPostalCode: user.store.addressPostal ?? "",
             }}
           />
         </CardContent>
