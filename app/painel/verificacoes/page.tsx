@@ -79,12 +79,22 @@ function TaskResolve({
     );
   }
   if (task.resolve.kind === "url") {
+    if (task.resolve.embed) {
+      return (
+        <iframe
+          title={task.title}
+          src={task.resolve.url}
+          allow="camera; microphone; fullscreen"
+          className="h-[760px] w-full rounded-xl border bg-white"
+        />
+      );
+    }
     const external = task.resolve.url.startsWith("http");
     return (
       <a
         href={task.resolve.url}
-        className="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm text-primary-foreground"
-        {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
+        className={cn(buttonVariants(), "h-10 px-4")}
+        {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
       >
         {task.resolve.label}
       </a>
@@ -226,7 +236,7 @@ export default async function VerificacoesPage({
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Veja o status, continue um pedido ou comece uma verificação nova.
+                    Esta parte é o KYC. Escolha individual ou empresarial para abrir o fluxo de identidade. A análise do negócio é o outro card.
                   </p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {desk.identity.map((item) => (
@@ -245,77 +255,65 @@ export default async function VerificacoesPage({
           ) : null}
 
           {showBusiness ? (
-            <Card>
-              <CardHeader className="space-y-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <CardTitle>
-                    {businessTasks[0]?.title ?? desk.businessReview.title}
-                  </CardTitle>
-                  <Link
-                    href="/painel/verificacoes?secao=negocio&refresh=1"
-                    className={cn(buttonVariants({ variant: "outline" }), "h-9 px-3")}
-                  >
-                    Atualizar
-                  </Link>
-                </div>
-                <Badge variant="outline">
-                  {desk.businessReview.pendingReview ? "Em análise" : "Pendente"}
-                </Badge>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">{desk.businessReview.description}</p>
-                {desk.businessReview.pendingReview ? (
-                  <p className="text-sm">
-                    A Whop está analisando o que você enviou. Os saques ficam pausados até a análise; as vendas continuam.
-                  </p>
-                ) : (
-                  (formTasks.length > 0 ? formTasks : businessTasks).map((task) => (
-                    <div key={task.id} className="space-y-3">
-                      {businessTasks.length > 1 ? (
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="font-medium">{task.title}</p>
-                          <span className="text-xs text-muted-foreground">{taskStatusLabel(task.status)}</span>
-                        </div>
-                      ) : null}
-                      {task.description !== desk.businessReview.description ? (
-                        <p className="text-sm text-muted-foreground">{task.description}</p>
-                      ) : null}
-                      {task.details.length > 0 ? (
-                        <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                          {task.details.map((detail) => (
-                            <li key={detail}>{detail}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                      {task.resolve.kind === "form" ? (
-                        <VerificationForm
-                          verificationId={task.resolve.verificationId}
-                          fields={[...task.resolve.fields].sort(
-                            (left, right) => answerOrder(left) - answerOrder(right),
-                          )}
-                          label={task.resolve.label}
-                        />
-                      ) : (
-                        <TaskResolve task={task} sessionUrl={businessSessions.get(task.id) ?? null} />
-                      )}
-                    </div>
-                  ))
-                )}
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <a
-                    href={`https://whop.com/dashboard/${bizId}/settings/verifications/`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={cn(buttonVariants({ variant: "outline" }), "h-10 px-4")}
-                  >
-                    Abrir na Whop (requer login)
-                  </a>
-                  <p className="text-xs text-muted-foreground">
-                    Só use este link se o fluxo acima não abrir. Essa página pede login na Whop.
-                  </p>
+                  <h2 className="text-lg">{desk.businessReview.title}</h2>
+                  <p className="text-sm text-muted-foreground">{desk.businessReview.description}</p>
                 </div>
-              </CardContent>
-            </Card>
+                <Link
+                  href="/painel/verificacoes?secao=negocio&refresh=1"
+                  className={cn(buttonVariants({ variant: "outline" }), "h-9 px-3")}
+                >
+                  Atualizar
+                </Link>
+              </div>
+              {desk.businessReview.pendingReview ? (
+                <p className="text-sm">
+                  A Whop está analisando o que você enviou. Os saques ficam pausados até a análise; as vendas continuam.
+                </p>
+              ) : null}
+              {[
+                ...businessTasks.filter((task) => task.id === "business-review-rfi"),
+                ...formTasks,
+                ...businessTasks.filter(
+                  (task) => task.resolve.kind !== "form" && task.id !== "business-review-rfi",
+                ),
+              ].map((task) => (
+                <Card key={task.id}>
+                  <CardHeader className="space-y-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <CardTitle>{task.title}</CardTitle>
+                      <Badge variant="outline">{taskStatusLabel(task.status)}</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-muted-foreground">{task.description}</p>
+                    {task.details.length > 0 ? (
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                        {task.details.map((detail) => (
+                          <li key={detail}>{detail}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {task.resolve.kind === "form" ? (
+                      <VerificationForm
+                        verificationId={task.resolve.verificationId}
+                        fields={[...task.resolve.fields].sort(
+                          (left, right) => answerOrder(left) - answerOrder(right),
+                        )}
+                        label={task.resolve.label}
+                      />
+                    ) : (
+                      <TaskResolve task={task} sessionUrl={businessSessions.get(task.id) ?? null} />
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+              <p className="text-sm text-muted-foreground">
+                Você pode resolver as pendências na ordem que preferir. A análise do negócio é a que libera os saques primeiro.
+              </p>
+            </section>
           ) : null}
 
           {lane ? (

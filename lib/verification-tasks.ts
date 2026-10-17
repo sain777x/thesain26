@@ -563,19 +563,22 @@ export function buildVerificationDesk(input: {
 
   const hasBusinessForm = tasks.some((task) => task.resolve.kind === "form");
   if (review && !hasBusinessForm) {
+    const reviewUrl = httpsUrl(review.cta);
     tasks.push({
-      id: "business-review-session",
+      id: "business-review-rfi",
       title: "Informações atualizadas do negócio",
       description:
-        "A Whop pediu informações atualizadas do negócio. Preencha no fluxo abaixo, já autenticado — sem login no painel da Whop. Os saques voltam depois da análise (geralmente menos de 24h). As vendas continuam.",
+        "A Whop pediu informações atualizadas do negócio. Preencha no formulário oficial (descrição + rede social, depois as provas em JPG/PDF). Os saques voltam depois da análise (geralmente menos de 24h). As vendas continuam.",
       category: "extra",
       status: review.status === "pending" ? "pending" : "required",
       details: [
-        "Abre o fluxo oficial da Whop (descrição do negócio + rede social, depois as provas em JPG/PDF).",
-        "Ao terminar, volte para esta página e clique em Atualizar.",
+        "Abre a aba Verificações da Whop, onde está o formulário desta pendência.",
+        "Ao terminar lá, volte para esta página e clique em Atualizar.",
       ],
       blocked: review.blocked,
-      resolve: { kind: "session", kindHint: "business", label: "Adicionar informações" },
+      resolve: reviewUrl
+        ? { kind: "url", url: reviewUrl, embed: false, label: "Responder na Whop" }
+        : { kind: "url", url: "/painel/verificacoes", embed: false, label: "Atualizar" },
     });
   }
 
@@ -588,7 +591,7 @@ export function buildVerificationDesk(input: {
       description: hasBusinessForm
         ? "A Whop está pedindo só o que está neste formulário, lido agora. Não envie prova, imposto ou outro campo que não apareça aqui."
         : review
-          ? "A Whop pediu informações atualizadas do negócio. Use o fluxo abaixo para responder — ele abre já autenticado."
+          ? "A Whop pediu informações atualizadas do negócio. Escolha abaixo por qual pendência começar."
           : "A análise segue pendente, mas a Whop ainda não devolveu as perguntas. Atualize a página para ler o pedido de novo.",
       profile: {
         description: input.description,

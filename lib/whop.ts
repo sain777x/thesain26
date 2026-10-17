@@ -189,8 +189,9 @@ export async function businessReviewPortalUrl(accountId: string, _origin?: strin
 }
 
 /**
- * Sessão hospedada de verificação, já autenticada pela plataforma.
- * O vendedor preenche dentro da thesain26, sem login no painel da Whop.
+ * Sessão hospedada de identidade (KYC), já autenticada pela plataforma.
+ * A Whop ignora `kind` nesta URL: o fluxo é sempre o de verify-identity.
+ * O pedido de informações do negócio não passa por aqui.
  */
 export async function openVerificationSession(params: {
   accountId: string;
@@ -198,15 +199,13 @@ export async function openVerificationSession(params: {
   returnUrl: string;
   refreshUrl: string;
 }) {
-  const url = await createAccountLink({
+  void params.kind;
+  return createAccountLink({
     accountId: params.accountId,
     useCase: "account_onboarding",
     returnUrl: params.returnUrl,
     refreshUrl: params.refreshUrl,
   });
-  const session = new URL(url);
-  session.searchParams.set("kind", params.kind);
-  return session.toString();
 }
 
 type DirectChargeInput = {
