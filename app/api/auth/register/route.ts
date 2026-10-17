@@ -40,6 +40,10 @@ const schema = z.object({
   businessType: z.enum(businessValues),
   industryType: z.enum(industryValues),
   country: z.enum(countryValues),
+  addressLine1: z.string().trim().max(120).optional(),
+  addressCity: z.string().trim().max(80).optional(),
+  addressState: z.string().trim().max(80).optional(),
+  addressPostalCode: z.string().trim().max(20).optional(),
 });
 
 async function uniqueSlug(base: string) {
@@ -89,6 +93,10 @@ export async function POST(request: Request) {
             slug,
             description: body.description,
             country: body.country,
+            addressLine1: body.addressLine1?.trim() || null,
+            addressCity: body.addressCity?.trim() || null,
+            addressState: body.addressState?.trim() || null,
+            addressPostal: body.addressPostalCode?.trim() || null,
             businessType: body.businessType,
             industryType: body.industryType,
             ...channels,
@@ -126,6 +134,10 @@ export async function POST(request: Request) {
           linkedin: channels.linkedin,
           businessType: body.businessType,
           industryType: body.industryType,
+          addressLine1: body.addressLine1,
+          addressCity: body.addressCity,
+          addressState: body.addressState,
+          addressPostalCode: body.addressPostalCode,
         });
       } catch (error) {
         whopWarning = whopErrorMessage(error);
