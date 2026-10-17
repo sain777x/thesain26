@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { HttpError, requireSeller, toErrorResponse } from "@/lib/guards";
 import { MAX_VERIFICATION_FILES } from "@/lib/verification-files";
-import { presenceFromAnswers, saveBusinessPresence } from "@/lib/whop";
+import { appUrl } from "@/lib/app-url";
+import { businessReviewPortalUrl, presenceFromAnswers, saveBusinessPresence } from "@/lib/whop";
 import {
   assignVerificationAnswers,
   loadOpenInformation,
@@ -92,12 +93,8 @@ export async function POST(request: Request) {
       const open = refreshedHasProof ? refreshed : [...refreshed, ...before.filter((item) => !seen.has(item.id))];
       const assigned = assignVerificationAnswers(answers, open);
       if (assigned.missingProof) {
-        const savedText =
-          description || socialUrl || body.taxHandling ? "Os dados desta etapa foram salvos. " : "";
-        throw new HttpError(
-          400,
-          `${savedText}A Whop ainda não abriu o pedido dos arquivos nesta conta. Atualize a página e envie as provas de novo.`,
-        );
+        const url = await businessReviewPortalUrl(user.whopBizId, appUrl());
+        return NextResponse.json({ redirect: url });
       }
       if (assigned.groups.length === 0) {
         const hadRealAnswers = answers.some((answer) => answer.id !== PROOF_FIELD_ID);

@@ -51,6 +51,7 @@ export type OpenInformation = {
   label: string;
   type: string;
   responseType?: string | null;
+  supportingFilesRequired?: boolean;
 };
 
 function isProofItem(item: { requirement: string; label: string; type: string; field?: string | null }) {
@@ -61,8 +62,20 @@ function isProofItem(item: { requirement: string; label: string; type: string; f
   return requirement === "proof_of_funnel" && wantsFiles(item);
 }
 
+function acceptsUploadedFiles(item: OpenInformation) {
+  return wantsFiles(item) || Boolean(item.supportingFilesRequired);
+}
+
 function proofTarget(open: OpenInformation[]) {
-  return open.find((item) => isProofItem(item));
+  const named = open.find((item) => isProofItem(item));
+  if (named) return named;
+  const uploads = open.filter((item) => acceptsUploadedFiles(item));
+  if (uploads.length === 1) return uploads[0];
+  return uploads.find((item) =>
+    /proof|fulfill|delivery|prova|arquivo|document|statement/.test(
+      `${item.requirement} ${item.label}`.toLowerCase(),
+    ),
+  );
 }
 
 /** Lê de novo os pedidos abertos. O retrieve completa o que a lista às vezes omite. */
@@ -96,6 +109,7 @@ export async function loadOpenInformation(accountId: string): Promise<OpenInform
         label: item.label,
         type: item.type,
         responseType: item.response_type,
+        supportingFilesRequired: item.supporting_files_required,
       });
     }
   }
@@ -279,8 +293,12 @@ export async function submitVerificationAnswers(params: {
     if (item.type === "select" && item.options?.length && !item.options.includes(value)) {
       throw new Error(`A opção de “${item.label}” não é aceita.`);
     }
-    if (item.type === "text_with_files") {
-      return { id: item.id, value, files: fileIds(answer.files) };
+    const files = fileIds(answer.files);
+    if (item.type === "text_with_files" || item.supporting_files_required || files.length > 0) {
+      if (item.supporting_files_required && files.length === 0) {
+        throw new Error(`Envie os arquivos de “${item.label}”.`);
+      }
+      return { id: item.id, value, ...(files.length > 0 ? { files } : {}) };
     }
     return { id: item.id, value };
   });

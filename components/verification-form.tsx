@@ -219,7 +219,11 @@ export function VerificationForm({
               : undefined,
         }),
       });
-      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      const data = (await response.json().catch(() => ({}))) as { error?: string; redirect?: string };
+      if (data.redirect) {
+        window.location.href = data.redirect;
+        return;
+      }
       if (!response.ok) {
         throw new Error(data.error ?? "A análise não aceitou as respostas.");
       }

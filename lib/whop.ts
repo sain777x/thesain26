@@ -170,6 +170,16 @@ export async function createAccountLink(params: {
   return link.url;
 }
 
+/** Portal autenticado da subconta, onde a Whop abre descrição, perfil e provas. */
+export async function businessReviewPortalUrl(accountId: string, origin: string) {
+  return createAccountLink({
+    accountId,
+    useCase: "payouts_portal",
+    returnUrl: `${origin}/painel/verificacoes?onboarding=return`,
+    refreshUrl: `${origin}/painel/verificacoes?onboarding=refresh`,
+  });
+}
+
 /**
  * Sessão hospedada de verificação, já autenticada pela plataforma.
  * O vendedor preenche dentro da thesain26, sem login no painel da Whop.

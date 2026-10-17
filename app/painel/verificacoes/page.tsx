@@ -1,14 +1,21 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AccountLinkButton } from "@/components/account-link-button";
 import { VerificationForm } from "@/components/verification-form";
 import { ReloadAction } from "@/components/reload-action";
 import { appUrl } from "@/lib/app-url";
 import { requireSeller } from "@/lib/guards";
 import { prisma } from "@/lib/prisma";
-import { loadVerificationDesk, openVerificationSession, syncKycStatus, whopErrorMessage } from "@/lib/whop";
 import {
-  capabilityLabel,
+  businessReviewPortalUrl,
+  loadVerificationDesk,
+  openVerificationSession,
+  syncKycStatus,
+  whopErrorMessage,
+} from "@/lib/whop";
+import {
   taskStatusLabel,
   type IdentityLane,
   type VerificationDesk,
@@ -139,6 +146,16 @@ export default async function VerificacoesPage({
     }
   }
 
+  let portalUrl: string | null = null;
+  if (showBusiness && desk && !desk.businessReview.pendingReview && bizId) {
+    try {
+      portalUrl = await businessReviewPortalUrl(bizId, appUrl());
+    } catch (caught) {
+      error = error ?? whopErrorMessage(caught);
+    }
+  }
+  if (portalUrl) redirect(portalUrl);
+
   return (
     <div className="space-y-6">
       <div>
@@ -214,13 +231,10 @@ export default async function VerificacoesPage({
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-sm text-muted-foreground">{desk.businessReview.description}</p>
-                <p className="text-sm text-muted-foreground">
-                  Você escolhe por onde começar. A análise do negócio fica disponível junto com a verificação individual e a empresarial.
-                </p>
                 {desk.businessReview.pendingReview ? (
                   <p className="text-sm">A Whop está analisando o que você enviou.</p>
                 ) : (
-                  <BusinessReview desk={desk} />
+                  <BusinessReview />
                 )}
               </CardContent>
             </Card>
@@ -321,44 +335,15 @@ function IdentityChoice({ lane, active }: { lane: IdentityLane; active: boolean 
   );
 }
 
-function BusinessReview({ desk }: { desk: VerificationDesk }) {
-  const review = desk.businessReview;
-  const forms = review.tasks.filter((task) => task.resolve.kind === "form");
-  const others = review.tasks.filter((task) => task.resolve.kind !== "form");
-  const profile =
-    review.profile.askDescription || review.profile.askSocial || review.profile.askTax ? review.profile : null;
-
-  if (forms.length === 0 && !profile) {
-    return <p className="text-sm text-muted-foreground">Nenhum campo pendente nesta análise.</p>;
-  }
-
+function BusinessReview() {
   return (
-    <div className="space-y-6">
-      {forms.length > 0 ? (
-        forms.map((task, index) =>
-          task.resolve.kind === "form" ? (
-            <div key={task.id} className="space-y-3">
-              {forms.length > 1 ? <p className="text-sm font-medium">{task.title}</p> : null}
-              {task.blocked.length > 0 ? (
-                <p className="text-sm">
-                  Enquanto isso estiver aberto, fica bloqueado: {task.blocked.map(capabilityLabel).join(", ")}.
-                </p>
-              ) : null}
-              <VerificationForm
-                verificationId={task.resolve.verificationId}
-                fields={task.resolve.fields}
-                label={task.resolve.label}
-                profile={index === 0 ? profile : null}
-              />
-            </div>
-          ) : null,
-        )
-      ) : profile ? (
-        <VerificationForm fields={[]} label="Enviar informações" profile={profile} />
-      ) : null}
-      {others.map((task) => (
-        <TaskResolve key={task.id} task={task} sessionUrl={null} />
-      ))}
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        A descrição, o perfil e as provas abrem no assistente da Whop, já dentro desta subconta. É lá que o pedido dos arquivos fica aberto.
+      </p>
+      <AccountLinkButton useCase="payouts_portal" returnTo="verificacoes">
+        Abrir a verificação na Whop
+      </AccountLinkButton>
     </div>
   );
 }

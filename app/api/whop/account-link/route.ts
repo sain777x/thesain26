@@ -6,6 +6,7 @@ import { createAccountLink } from "@/lib/whop";
 
 const schema = z.object({
   useCase: z.enum(["account_onboarding", "payouts_portal"]),
+  returnTo: z.enum(["verificacoes", "saldo"]).optional(),
 });
 
 /**
@@ -22,16 +23,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const { useCase } = schema.parse(await request.json());
+    const { useCase, returnTo } = schema.parse(await request.json());
     const origin = appUrl();
-    const returnUrl =
-      useCase === "account_onboarding"
-        ? `${origin}/painel/verificacoes?onboarding=return`
-        : `${origin}/painel/saldo?payouts=return`;
-    const refreshUrl =
-      useCase === "account_onboarding"
-        ? `${origin}/painel/verificacoes?onboarding=refresh`
-        : `${origin}/painel/saldo?payouts=refresh`;
+    const backToVerifications = returnTo === "verificacoes" || useCase === "account_onboarding";
+    const returnUrl = backToVerifications
+      ? `${origin}/painel/verificacoes?onboarding=return`
+      : `${origin}/painel/saldo?payouts=return`;
+    const refreshUrl = backToVerifications
+      ? `${origin}/painel/verificacoes?onboarding=refresh`
+      : `${origin}/painel/saldo?payouts=refresh`;
 
     const url = await createAccountLink({
       accountId: user.whopBizId,

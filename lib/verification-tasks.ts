@@ -623,7 +623,7 @@ export function buildVerificationDesk(input: {
       affectsWithdrawals: Boolean(review),
       title: "Análise do negócio",
       description:
-        "Envie a descrição da empresa, o perfil de rede social ou o site e as provas do que o comprador recebeu. As provas podem ser várias imagens, PDF ou vídeo.",
+        "A descrição, o perfil e as provas abrem no assistente da Whop, já dentro desta subconta. A identidade continua nesta página, se você quiser fazê-la primeiro.",
       profile: {
         description: input.description,
         socialUrl: input.socialUrl,

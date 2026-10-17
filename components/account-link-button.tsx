@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 
 export function AccountLinkButton({
   useCase,
+  returnTo,
   children,
   variant = "default",
 }: {
   useCase: "account_onboarding" | "payouts_portal";
+  returnTo?: "verificacoes" | "saldo";
   children: React.ReactNode;
   variant?: "default" | "outline" | "secondary";
 }) {
@@ -21,7 +23,7 @@ export function AccountLinkButton({
     const response = await fetch("/api/whop/account-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ useCase }),
+      body: JSON.stringify({ useCase, returnTo }),
     });
     const data = (await response.json().catch(() => ({}))) as {
       url?: string;
