@@ -56,7 +56,7 @@ export async function generateProductDraft(prompt: string): Promise<ProductBody>
             "R$, real ou reais = brl. US$, USD ou dólar = usd. € ou euro = eur. Se a moeda não aparecer, use usd.",
             "Se houver mais de um preço, o principal vai em price e os demais em prices, cada um com label e amount.",
             "prices tem no máximo 5 itens. Não repita o preço principal.",
-            "name até 80 caracteres. subtitle até 140. description é o texto de venda, no mesmo idioma do prompt, até 4000 caracteres.",
+            "name até 80 caracteres. subtitle até 80. description é o texto de venda, no mesmo idioma do prompt, até 4000 caracteres.",
             "slug em minúsculas, com hífens, sem acento, até 48 caracteres.",
             "Não invente imageUrl. Não inclua campos fora dessa lista.",
             "Se o texto não tiver preço, use price 0.",
@@ -90,7 +90,7 @@ export async function generateProductDraft(prompt: string): Promise<ProductBody>
   const extras = Array.isArray(parsed.prices) ? parsed.prices : [];
   const draft = {
     name: clip(parsed.name, 80) || "Produto",
-    subtitle: clip(parsed.subtitle, 140),
+    subtitle: clip(parsed.subtitle, 80),
     description: clip(parsed.description, 4000),
     productType: pick(parsed.productType, productTypes, "outro") as ProductType,
     deliveryMethod: pick(parsed.deliveryMethod, deliveries, "manual") as DeliveryMethod,

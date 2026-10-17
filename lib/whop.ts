@@ -218,7 +218,17 @@ type DirectChargeInput = {
   metadata: Record<string, string>;
   redirectUrl?: string;
   planId?: string | null;
+  /** prod_ do produto cujo título e rótulo o checkout mostra. */
+  whopProductId?: string | null;
 };
+
+/** A variante da Whop só aceita 30 caracteres. O nome visível fica no produto, até 80. */
+const VARIANT_TITLE_MAX = 30;
+
+function variantTitle(value: string) {
+  const title = value.trim().slice(0, VARIANT_TITLE_MAX);
+  return title || "Produto";
+}
 
 export type DirectChargeResult = {
   sessionId: string;
@@ -267,8 +277,9 @@ export async function createDirectChargeCheckout(
           currency: (input.currency || "usd").toLowerCase(),
           plan_type: "one_time",
           initial_price: input.price,
-          title: input.title,
-          description: input.description || null,
+          product_id: input.whopProductId || undefined,
+          title: variantTitle(input.title),
+          description: input.description?.trim().slice(0, 1000) || null,
           force_create_new_plan: true,
           visibility: "visible",
           metadata: input.metadata,
@@ -288,6 +299,48 @@ export async function createDirectChargeCheckout(
     purchaseUrl: configuration.purchase_url ?? plan?.purchase_url ?? null,
     applicationFeeAmount: fee,
   };
+}
+
+/**
+ * Produto da Whop que o checkout usa como nome.
+ * `title` aceita 80 caracteres. `headline` é o rótulo, também até 80.
+ * Sem este produto, a página mostra o nome da empresa.
+ */
+export async function syncCheckoutProduct(input: {
+  accountId: string;
+  whopProductId?: string | null;
+  name: string;
+  subtitle?: string;
+  description?: string;
+}) {
+  const client = getWhop();
+  const title = input.name.trim().slice(0, 80);
+  if (title.length < 2) {
+    throw new Error("O nome do produto precisa ter pelo menos 2 caracteres.");
+  }
+  const headline = input.subtitle?.trim().slice(0, 80) || null;
+  const description = input.description?.trim().slice(0, 1500) || null;
+  if (input.whopProductId) {
+    await client.products.update({
+      id: input.whopProductId,
+      title,
+      headline,
+      description,
+      visibility: "visible",
+    });
+    return input.whopProductId;
+  }
+  const created = await client.products.create({
+    account_id: input.accountId,
+    title,
+    headline,
+    description,
+    visibility: "visible",
+  });
+  if (!created.id) {
+    throw new Error("A Whop não devolveu o produto.");
+  }
+  return created.id;
 }
 
 export type KycSnapshot = {

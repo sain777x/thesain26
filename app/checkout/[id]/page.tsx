@@ -30,7 +30,7 @@ export async function generateMetadata({
   const { id } = await params;
   const product = await findCheckoutProduct(id);
   if (!product) return { title: "Checkout" };
-  return { title: `Checkout — ${product.store.name}` };
+  return { title: `Checkout — ${product.name}` };
 }
 
 export default async function CheckoutPage({

@@ -170,11 +170,13 @@ export function ProductForm({ product }: { product?: ProductValues }) {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="name">Nome do produto</Label>
-          <Input id="name" name="name" defaultValue={draft?.name} required />
+          <Input id="name" name="name" defaultValue={draft?.name} required maxLength={80} />
+          <p className="text-xs text-muted-foreground">Até 80 caracteres. É o nome que aparece no checkout.</p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="subtitle">Rótulo / subtítulo</Label>
-          <Input id="subtitle" name="subtitle" defaultValue={draft?.subtitle} />
+          <Input id="subtitle" name="subtitle" defaultValue={draft?.subtitle} maxLength={80} />
+          <p className="text-xs text-muted-foreground">Até 80 caracteres. Aparece abaixo do nome no checkout.</p>
         </div>
       </div>
       <div className="space-y-2">

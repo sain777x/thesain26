@@ -58,6 +58,7 @@ export async function POST(request: Request) {
         storeId: user.store.id,
         storeSlug: user.store.slug,
         name: body.name,
+        subtitle: body.subtitle,
         description: body.description,
         price,
         currency: body.currency,
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
       const saved = await prisma.product.update({
         where: { id: product.id },
         data: {
+          whopProductId: checkout.whopProductId,
           whopPlanId: checkout.planId,
           whopCheckoutId: checkout.sessionId,
           whopPurchaseUrl: checkout.purchaseUrl,
@@ -82,7 +84,9 @@ export async function POST(request: Request) {
           storeId: user.store.id,
           storeSlug: user.store.slug,
           name: body.name,
+          subtitle: body.subtitle,
           description: body.description,
+          whopProductId: checkout.whopProductId,
           price,
           currency: body.currency,
           feePercent,
@@ -93,7 +97,7 @@ export async function POST(request: Request) {
       );
       return NextResponse.json({
         product: saved,
-        whopWarning: warnings.length ? warnings.join(" ") : null,
+        whopWarning: [checkout.warning, ...warnings].filter(Boolean).join(" ") || null,
       });
     } catch (error) {
       await prisma.product.delete({ where: { id: product.id } }).catch(() => undefined);

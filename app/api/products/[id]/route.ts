@@ -52,7 +52,9 @@ export async function PATCH(
       storeId: current.storeId,
       storeSlug: current.store.slug,
       name: body.name,
+      subtitle: body.subtitle,
       description: body.description,
+      whopProductId: current.whopProductId,
       price,
       currency: body.currency,
       feePercent,
@@ -74,6 +76,7 @@ export async function PATCH(
         slug,
         status,
         active: status === "active",
+        whopProductId: checkout.whopProductId,
         whopPlanId: checkout.planId,
         whopCheckoutId: checkout.sessionId,
         whopPurchaseUrl: checkout.purchaseUrl,
@@ -89,7 +92,9 @@ export async function PATCH(
         storeId: current.storeId,
         storeSlug: current.store.slug,
         name: body.name,
+        subtitle: body.subtitle,
         description: body.description,
+        whopProductId: checkout.whopProductId,
         price,
         currency: body.currency,
         feePercent,
@@ -101,7 +106,7 @@ export async function PATCH(
 
     return NextResponse.json({
       product,
-      whopWarning: warnings.length ? warnings.join(" ") : null,
+      whopWarning: [checkout.warning, ...warnings].filter(Boolean).join(" ") || null,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

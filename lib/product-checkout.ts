@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { appUrl } from "@/lib/app-url";
 import { HttpError } from "@/lib/guards";
 import { slugify } from "@/lib/slug";
-import { createDirectChargeCheckout, whopErrorMessage } from "@/lib/whop";
+import { createDirectChargeCheckout, syncCheckoutProduct, whopErrorMessage } from "@/lib/whop";
 import type { ProductBody } from "@/lib/product-schema";
 
 export async function uniqueProductSlug(raw: string, productId?: string) {
@@ -27,7 +27,9 @@ type CheckoutTarget = {
   storeId: string;
   storeSlug: string;
   name: string;
+  subtitle: string;
   description: string;
+  whopProductId?: string | null;
   price: number;
   currency: string;
   feePercent: number;
@@ -41,13 +43,34 @@ type CheckoutTarget = {
  * purchase_url e a comissão. Cada opção de preço ganha a própria variante,
  * sempre com application_fee_amount.
  */
+function scopeDenied(error: unknown) {
+  return /access_pass|not authorized|forbidden/i.test(whopErrorMessage(error));
+}
+
 export async function openSellerPlan(input: CheckoutTarget) {
-  return createDirectChargeCheckout({
+  let whopProductId = input.whopProductId ?? null;
+  let warning: string | null = null;
+  try {
+    whopProductId = await syncCheckoutProduct({
+      accountId: input.accountId,
+      whopProductId,
+      name: input.name,
+      subtitle: input.subtitle,
+      description: input.description,
+    });
+  } catch (error) {
+    if (!scopeDenied(error)) throw error;
+    warning =
+      "A chave da Whop não pode criar o produto do checkout. Sem a permissão de produto, o link mostra o nome da empresa em vez do nome e do rótulo.";
+    whopProductId = input.whopProductId ?? null;
+  }
+  const checkout = await createDirectChargeCheckout({
     accountId: input.accountId,
     price: input.price,
     currency: input.currency,
     feePercent: input.feePercent,
-    title: input.priceLabel ? `${input.name} — ${input.priceLabel}` : input.name,
+    whopProductId,
+    title: input.priceLabel?.trim() || input.name,
     description: input.description,
     redirectUrl: `${appUrl()}/loja/${input.storeSlug}/obrigado`,
     metadata: {
@@ -60,6 +83,7 @@ export async function openSellerPlan(input: CheckoutTarget) {
       price_label: input.priceLabel || "principal",
     },
   });
+  return { ...checkout, whopProductId, warning };
 }
 
 export async function saveExtraPrices(

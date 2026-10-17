@@ -80,6 +80,8 @@ model Product {
   slug                 String?  @unique
   /// active | draft. `active` espelha este campo para a vitrine pública.
   status               String   @default("active")
+  /// Produto na Whop (prod_). O checkout usa o título daqui, não o nome da empresa.
+  whopProductId        String?
   whopPlanId           String?
   whopCheckoutId       String?
   whopPurchaseUrl      String?

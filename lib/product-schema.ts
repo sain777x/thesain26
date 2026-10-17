@@ -25,7 +25,7 @@ export const productPriceSchema = z.object({
 
 export const productBodySchema = z.object({
   name: z.string().trim().min(2).max(80),
-  subtitle: z.string().trim().max(140).optional().default(""),
+  subtitle: z.string().trim().max(80).optional().default(""),
   description: z.string().trim().max(8000).optional().default(""),
   productType: z.enum(productTypeValues).optional().default("outro"),
   deliveryMethod: z.enum(deliveryValues).optional().default("manual"),
