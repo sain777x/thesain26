@@ -26,7 +26,7 @@ export async function openProductCheckout(productId: string, priceId?: string | 
     throw new HttpError(400, "Este produto ainda não tem checkout da Whop.");
   }
 
-  // KYC pendente -> bloqueia vendas acima do limite (modo suave: deixa testar pequeno).
+  // KYC pendente -> bloqueia vendas acima de US$2400 até o KYC aprovar.
   await requireVerifiedSeller(product.seller.whopBizId, option?.amount ?? product.price);
 
   const feePercent = await feePercentFor(product.seller);
