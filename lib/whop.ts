@@ -417,11 +417,11 @@ function mapVerificationStatus(status: string | undefined): KycSnapshot["status"
 export async function requireVerifiedSeller(
   accountId: string,
   amountUsd: number,
-  capUsd = 50,
+  capUsd = 2400,
 ): Promise<void> {
   const kyc = await syncKycStatus(accountId);
   if (kyc.status === "verified") return;
-  if (amountUsd <= capUsd) return; // deixa testar com valor baixo até o KYC aprovar
+  if (amountUsd <= capUsd) return; // deixa vender até US$2400 até o KYC aprovar
   throw new Error("Conclua a verificação da loja para vender acima do limite.");
 }
 
