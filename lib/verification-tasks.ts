@@ -540,7 +540,7 @@ export function buildVerificationDesk(input: {
   }).filter((task) => task.id !== "kyc-done");
 
   const review = input.actions.find((action) => action.action === "submit_information_request");
-  const tasks = businessTasks;
+  const tasks = [...businessTasks];
 
   const lanes: IdentityLane[] = (
     [
@@ -561,15 +561,34 @@ export function buildVerificationDesk(input: {
     ),
   }));
 
+  const hasBusinessForm = tasks.some((task) => task.resolve.kind === "form");
+  if (review && !hasBusinessForm) {
+    tasks.push({
+      id: "business-review-session",
+      title: "Informações atualizadas do negócio",
+      description:
+        "A Whop pediu informações atualizadas do negócio. Preencha no fluxo abaixo, já autenticado — sem login no painel da Whop. Os saques voltam depois da análise (geralmente menos de 24h). As vendas continuam.",
+      category: "extra",
+      status: review.status === "pending" ? "pending" : "required",
+      details: [
+        "Abre o fluxo oficial da Whop (descrição do negócio + rede social, depois as provas em JPG/PDF).",
+        "Ao terminar, volte para esta página e clique em Atualizar.",
+      ],
+      blocked: review.blocked,
+      resolve: { kind: "session", kindHint: "business", label: "Adicionar informações" },
+    });
+  }
+
   return {
     businessReview: {
       open: Boolean(review) || tasks.length > 0,
       pendingReview: review?.status === "pending" && businessTasks.length === 0,
       affectsWithdrawals: Boolean(review),
       title: "Análise do negócio",
-      description:
-        tasks.length > 0
-          ? "A Whop está pedindo só o que está neste formulário, lido agora. Não envie prova, imposto ou outro campo que não apareça aqui."
+      description: hasBusinessForm
+        ? "A Whop está pedindo só o que está neste formulário, lido agora. Não envie prova, imposto ou outro campo que não apareça aqui."
+        : review
+          ? "A Whop pediu informações atualizadas do negócio. Use o fluxo abaixo para responder — ele abre já autenticado."
           : "A análise segue pendente, mas a Whop ainda não devolveu as perguntas. Atualize a página para ler o pedido de novo.",
       profile: {
         description: input.description,

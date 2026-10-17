@@ -8,7 +8,6 @@ import { appUrl } from "@/lib/app-url";
 import { requireSeller } from "@/lib/guards";
 import { prisma } from "@/lib/prisma";
 import {
-  businessReviewPortalUrl,
   loadVerificationDesk,
   openVerificationSession,
   syncKycStatus,
@@ -149,24 +148,22 @@ export default async function VerificacoesPage({
     }
   }
 
-  const formTasks =
-    desk?.businessReview.tasks.filter((task) => task.resolve.kind === "form") ?? [];
-  let businessSessionUrl: string | null = null;
-  let portalUrl: string | null = null;
-  if (showBusiness && desk && !desk.businessReview.pendingReview && bizId) {
-    try {
-      portalUrl = await businessReviewPortalUrl(bizId, appUrl());
-    } catch (caught) {
-      error = error ?? whopErrorMessage(caught);
-    }
-    if (formTasks.length === 0) {
+  const businessTasks = desk?.businessReview.tasks ?? [];
+  const formTasks = businessTasks.filter((task) => task.resolve.kind === "form");
+  const businessSessions = new Map<string, string>();
+  if (showBusiness && desk && bizId && !desk.businessReview.pendingReview) {
+    for (const task of businessTasks) {
+      if (task.resolve.kind !== "session" || task.status === "pending") continue;
       try {
-        businessSessionUrl = await openVerificationSession({
-          accountId: bizId,
-          kind: "business",
-          returnUrl,
-          refreshUrl,
-        });
+        businessSessions.set(
+          task.id,
+          await openVerificationSession({
+            accountId: bizId,
+            kind: task.resolve.kindHint ?? "business",
+            returnUrl,
+            refreshUrl,
+          }),
+        );
       } catch (caught) {
         error = error ?? whopErrorMessage(caught);
       }
@@ -241,48 +238,82 @@ export default async function VerificacoesPage({
             </div>
           </section>
 
+          {section === "negocio" && !desk.businessReview.open ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhuma pergunta aberta chegou da Whop nesta leitura. Atualize a página antes de enviar qualquer coisa.
+            </p>
+          ) : null}
+
           {showBusiness ? (
             <Card>
-              <CardHeader>
-                <CardTitle>{desk.businessReview.title}</CardTitle>
+              <CardHeader className="space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <CardTitle>
+                    {businessTasks[0]?.title ?? desk.businessReview.title}
+                  </CardTitle>
+                  <Link
+                    href="/painel/verificacoes?secao=negocio&refresh=1"
+                    className={cn(buttonVariants({ variant: "outline" }), "h-9 px-3")}
+                  >
+                    Atualizar
+                  </Link>
+                </div>
+                <Badge variant="outline">
+                  {desk.businessReview.pendingReview ? "Em análise" : "Pendente"}
+                </Badge>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  {formTasks.length > 0
-                    ? "A Whop devolveu estas perguntas. Responda só o que está neste formulário."
-                    : "A Whop pediu informações do negócio. O formulário abre aqui, já autenticado, no mesmo fluxo da conta mãe."}
-                </p>
+                <p className="text-sm text-muted-foreground">{desk.businessReview.description}</p>
                 {desk.businessReview.pendingReview ? (
-                  <p className="text-sm">A Whop está analisando o que você enviou.</p>
-                ) : formTasks.length > 0 ? (
-                  <BusinessReview review={desk.businessReview} portalUrl={null} />
-                ) : businessSessionUrl ? (
-                  <iframe
-                    title={desk.businessReview.title}
-                    src={businessSessionUrl}
-                    allow="camera; microphone; fullscreen"
-                    className="h-[760px] w-full rounded-xl border bg-white"
-                  />
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Não foi possível abrir o pedido agora. Atualize a página e tente de novo.
+                  <p className="text-sm">
+                    A Whop está analisando o que você enviou. Os saques ficam pausados até a análise; as vendas continuam.
                   </p>
+                ) : (
+                  (formTasks.length > 0 ? formTasks : businessTasks).map((task) => (
+                    <div key={task.id} className="space-y-3">
+                      {businessTasks.length > 1 ? (
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-medium">{task.title}</p>
+                          <span className="text-xs text-muted-foreground">{taskStatusLabel(task.status)}</span>
+                        </div>
+                      ) : null}
+                      {task.description !== desk.businessReview.description ? (
+                        <p className="text-sm text-muted-foreground">{task.description}</p>
+                      ) : null}
+                      {task.details.length > 0 ? (
+                        <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                          {task.details.map((detail) => (
+                            <li key={detail}>{detail}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {task.resolve.kind === "form" ? (
+                        <VerificationForm
+                          verificationId={task.resolve.verificationId}
+                          fields={[...task.resolve.fields].sort(
+                            (left, right) => answerOrder(left) - answerOrder(right),
+                          )}
+                          label={task.resolve.label}
+                        />
+                      ) : (
+                        <TaskResolve task={task} sessionUrl={businessSessions.get(task.id) ?? null} />
+                      )}
+                    </div>
+                  ))
                 )}
-                {portalUrl ? (
-                  <div className="space-y-1">
-                    <a
-                      href={portalUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={cn(buttonVariants({ variant: "outline" }), "h-10 px-4")}
-                    >
-                      Abrir na Whop (requer login)
-                    </a>
-                    <p className="text-xs text-muted-foreground">
-                      Só use este link se o pedido acima não abrir. Essa página pede login na Whop.
-                    </p>
-                  </div>
-                ) : null}
+                <div className="space-y-1">
+                  <a
+                    href={`https://whop.com/dashboard/${bizId}/settings/verifications/`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={cn(buttonVariants({ variant: "outline" }), "h-10 px-4")}
+                  >
+                    Abrir na Whop (requer login)
+                  </a>
+                  <p className="text-xs text-muted-foreground">
+                    Só use este link se o fluxo acima não abrir. Essa página pede login na Whop.
+                  </p>
+                </div>
               </CardContent>
             </Card>
           ) : null}
@@ -389,51 +420,3 @@ function answerOrder(field: InformationField) {
   return 2;
 }
 
-function BusinessReview({
-  review,
-  portalUrl,
-}: {
-  review: VerificationDesk["businessReview"];
-  portalUrl: string | null;
-}) {
-  const forms = review.tasks.filter((task) => task.resolve.kind === "form");
-  const profileAsked =
-    review.profile.askDescription || review.profile.askSocial || review.profile.askTax;
-  return (
-    <div className="space-y-6">
-      {forms.length > 0 ? (
-        forms.map((task) =>
-          task.resolve.kind === "form" ? (
-            <VerificationForm
-              key={task.resolve.fields.map((field) => field.id).join(",")}
-              verificationId={task.resolve.verificationId}
-              fields={[...task.resolve.fields].sort((left, right) => answerOrder(left) - answerOrder(right))}
-              label={task.resolve.label}
-            />
-          ) : null,
-        )
-      ) : profileAsked ? (
-        <VerificationForm fields={[]} label="Enviar informações" profile={review.profile} />
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Nenhuma pergunta aberta chegou da Whop nesta leitura. Atualize a página antes de enviar qualquer coisa.
-        </p>
-      )}
-      {portalUrl ? (
-        <div className="space-y-1">
-          <a
-            href={portalUrl}
-            target="_blank"
-            rel="noreferrer"
-            className={cn(buttonVariants({ variant: "outline" }), "h-10 px-4")}
-          >
-            Abrir na Whop (requer login)
-          </a>
-          <p className="text-xs text-muted-foreground">
-            Só use este link se o formulário acima não mostrar algum campo pedido. Essa página pede login na Whop.
-          </p>
-        </div>
-      ) : null}
-    </div>
-  );
-}

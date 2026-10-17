@@ -387,8 +387,12 @@ export async function loadVerificationDesk(accountId: string): Promise<Verificat
     client.verifications.list({ account_id: accountId }),
   ]);
 
-  if (accountResult.status === "rejected" && verificationsResult.status === "rejected") {
-    throw accountResult.reason;
+  if (accountResult.status === "rejected") {
+    if (verificationsResult.status === "rejected") throw verificationsResult.reason;
+    console.error("[thesain26] accounts.retrieve", whopErrorMessage(accountResult.reason));
+  }
+  if (verificationsResult.status === "rejected") {
+    console.error("[thesain26] verifications.list", whopErrorMessage(verificationsResult.reason));
   }
 
   const account = accountResult.status === "fulfilled" ? accountResult.value : null;
