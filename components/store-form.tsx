@@ -25,6 +25,10 @@ type StoreValues = {
   businessType: string;
   industryType: string;
   country: string;
+  addressLine1: string;
+  addressCity: string;
+  addressState: string;
+  addressPostalCode: string;
 };
 
 export function StoreForm({ store }: { store: StoreValues }) {
@@ -57,6 +61,10 @@ export function StoreForm({ store }: { store: StoreValues }) {
         businessType: String(form.get("businessType") ?? ""),
         industryType: String(form.get("industryType") ?? ""),
         country: String(form.get("country") ?? "BR"),
+        addressLine1: String(form.get("addressLine1") ?? ""),
+        addressCity: String(form.get("addressCity") ?? ""),
+        addressState: String(form.get("addressState") ?? ""),
+        addressPostalCode: String(form.get("addressPostalCode") ?? ""),
       }),
     });
     const data = (await response.json().catch(() => ({}))) as {
@@ -178,6 +186,16 @@ export function StoreForm({ store }: { store: StoreValues }) {
           </NativeSelect>
         </div>
       </div>
+      <fieldset className="space-y-2 rounded-xl border p-4">
+        <legend className="px-1 text-sm font-medium">Endereço comercial (opcional)</legend>
+        <p className="text-xs text-muted-foreground">Sincroniza com a Whop (imposto e verificação de endereço).</p>
+        <Input id="addressLine1" name="addressLine1" defaultValue={store.addressLine1} placeholder="Rua e número" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Input id="addressCity" name="addressCity" defaultValue={store.addressCity} placeholder="Cidade" />
+          <Input id="addressState" name="addressState" defaultValue={store.addressState} placeholder="Estado/UF" />
+          <Input id="addressPostalCode" name="addressPostalCode" defaultValue={store.addressPostalCode} placeholder="CEP/ZIP" />
+        </div>
+      </fieldset>
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
