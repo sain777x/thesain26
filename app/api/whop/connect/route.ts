@@ -44,6 +44,10 @@ export async function POST() {
         linkedin: user.store.linkedin,
         businessType: user.store.businessType,
         industryType: user.store.industryType,
+        addressLine1: user.store.addressLine1,
+        addressCity: user.store.addressCity,
+        addressState: user.store.addressState,
+        addressPostalCode: user.store.addressPostal,
       });
     } catch (error) {
       whopWarning = whopErrorMessage(error);
