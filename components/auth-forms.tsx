@@ -79,6 +79,10 @@ export function RegisterForm() {
       businessType: String(form.get("businessType") ?? ""),
       industryType: String(form.get("industryType") ?? ""),
       country: String(form.get("country") ?? ""),
+      addressLine1: String(form.get("addressLine1") ?? ""),
+      addressCity: String(form.get("addressCity") ?? ""),
+      addressState: String(form.get("addressState") ?? ""),
+      addressPostalCode: String(form.get("addressPostalCode") ?? ""),
     };
     const response = await fetch("/api/auth/register", {
       method: "POST",
@@ -197,6 +201,16 @@ export function RegisterForm() {
           ))}
         </NativeSelect>
       </div>
+            <fieldset className="space-y-2 rounded-xl border p-4">
+        <legend className="px-1 text-sm font-medium">Endereço comercial (opcional)</legend>
+        <p className="text-xs text-muted-foreground">Usado pela Whop para imposto e verificação de endereço.</p>
+        <Input id="addressLine1" name="addressLine1" placeholder="Rua e número" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Input id="addressCity" name="addressCity" placeholder="Cidade" />
+          <Input id="addressState" name="addressState" placeholder="Estado/UF" />
+          <Input id="addressPostalCode" name="addressPostalCode" placeholder="CEP/ZIP" />
+        </div>
+      </fieldset>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <Button type="submit" className="h-10 w-full" disabled={pending}>
         {pending ? "Criando loja…" : "Criar minha loja"}
