@@ -41,6 +41,10 @@ const schema = z.object({
   businessType: z.enum(businessValues),
   industryType: z.enum(industryValues),
   country: z.enum(countryValues),
+  addressLine1: z.string().trim().max(120).optional(),
+  addressCity: z.string().trim().max(80).optional(),
+  addressState: z.string().trim().max(80).optional(),
+  addressPostalCode: z.string().trim().max(20).optional(),
 });
 
 function optionalUrl(value: string | undefined, label: string) {
@@ -100,6 +104,10 @@ export async function PATCH(request: Request) {
         businessType: body.businessType,
         industryType: body.industryType,
         country: body.country,
+        addressLine1: body.addressLine1?.trim() || null,
+        addressCity: body.addressCity?.trim() || null,
+        addressState: body.addressState?.trim() || null,
+        addressPostal: body.addressPostalCode?.trim() || null,
       },
     });
 
@@ -119,6 +127,10 @@ export async function PATCH(request: Request) {
           linkedin: store.linkedin,
           businessType: store.businessType,
           industryType: store.industryType,
+          addressLine1: store.addressLine1,
+          addressCity: store.addressCity,
+          addressState: store.addressState,
+          addressPostalCode: store.addressPostal,
         });
       } catch (error) {
         whopWarning = whopErrorMessage(error);
