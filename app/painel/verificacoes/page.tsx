@@ -149,12 +149,27 @@ export default async function VerificacoesPage({
     }
   }
 
+  const formTasks =
+    desk?.businessReview.tasks.filter((task) => task.resolve.kind === "form") ?? [];
+  let businessSessionUrl: string | null = null;
   let portalUrl: string | null = null;
   if (showBusiness && desk && !desk.businessReview.pendingReview && bizId) {
     try {
       portalUrl = await businessReviewPortalUrl(bizId, appUrl());
     } catch (caught) {
       error = error ?? whopErrorMessage(caught);
+    }
+    if (formTasks.length === 0) {
+      try {
+        businessSessionUrl = await openVerificationSession({
+          accountId: bizId,
+          kind: "business",
+          returnUrl,
+          refreshUrl,
+        });
+      } catch (caught) {
+        error = error ?? whopErrorMessage(caught);
+      }
     }
   }
 
@@ -232,12 +247,42 @@ export default async function VerificacoesPage({
                 <CardTitle>{desk.businessReview.title}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">{desk.businessReview.description}</p>
+                <p className="text-sm text-muted-foreground">
+                  {formTasks.length > 0
+                    ? "A Whop devolveu estas perguntas. Responda só o que está neste formulário."
+                    : "A Whop pediu informações do negócio. O formulário abre aqui, já autenticado, no mesmo fluxo da conta mãe."}
+                </p>
                 {desk.businessReview.pendingReview ? (
                   <p className="text-sm">A Whop está analisando o que você enviou.</p>
+                ) : formTasks.length > 0 ? (
+                  <BusinessReview review={desk.businessReview} portalUrl={null} />
+                ) : businessSessionUrl ? (
+                  <iframe
+                    title={desk.businessReview.title}
+                    src={businessSessionUrl}
+                    allow="camera; microphone; fullscreen"
+                    className="h-[760px] w-full rounded-xl border bg-white"
+                  />
                 ) : (
-                  <BusinessReview review={desk.businessReview} portalUrl={portalUrl} />
+                  <p className="text-sm text-muted-foreground">
+                    Não foi possível abrir o pedido agora. Atualize a página e tente de novo.
+                  </p>
                 )}
+                {portalUrl ? (
+                  <div className="space-y-1">
+                    <a
+                      href={portalUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={cn(buttonVariants({ variant: "outline" }), "h-10 px-4")}
+                    >
+                      Abrir na Whop (requer login)
+                    </a>
+                    <p className="text-xs text-muted-foreground">
+                      Só use este link se o pedido acima não abrir. Essa página pede login na Whop.
+                    </p>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}
