@@ -74,11 +74,13 @@ export async function createConnectedAccount(params: {
     title: params.title,
     country: params.country || undefined,
     website: params.website || undefined,
+    dispute_fighter_enabled: true,
+    send_customer_emails: true,
     metadata: {
       external_id: params.externalId,
       platform: "thesain26",
     },
-  });
+  } as Parameters<typeof client.accounts.create>[0]);
   if (!account.id) {
     throw new Error("A Whop não devolveu o id da connected account.");
   }
@@ -97,6 +99,11 @@ export type CompanyProfileInput = {
   linkedin?: string | null;
   businessType: string;
   industryType: string;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  addressCity?: string | null;
+  addressState?: string | null;
+  addressPostalCode?: string | null;
 };
 
 /**
@@ -107,6 +114,16 @@ export type CompanyProfileInput = {
 export async function syncCompanyProfile(accountId: string, input: CompanyProfileInput) {
   const client = getWhop();
   const classification = toWhopClassification(input.businessType, input.industryType);
+  const businessAddress = input.addressLine1
+    ? {
+        line1: input.addressLine1,
+        line2: input.addressLine2 || null,
+        city: input.addressCity || null,
+        state: input.addressState || null,
+        postal_code: input.addressPostalCode || null,
+        country: input.country.toUpperCase(),
+      }
+    : undefined;
   const website = normalizeHttpUrl(input.website);
   const socialLinks = buildSocialLinks({
     website,
@@ -129,7 +146,15 @@ export async function syncCompanyProfile(accountId: string, input: CompanyProfil
     other_business_description: classification.otherBusiness ?? null,
     other_industry_description: classification.otherIndustry ?? null,
     social_links: socialLinks,
-  });
+    // Perfil completo: sai do None e fica mais segura na Whop.
+    onboarding_type: "seller",
+    three_ds_level: "mandate_if_required",
+    dispute_fighter_enabled: true,
+    // Imposto: opção 2 da tela ("Whop collects and remits tax").
+    tax_remitted_by: "whop",
+    tax_type: "exclusive",
+    ...(businessAddress ? { business_address: businessAddress } : {}),
+  } as Parameters<typeof client.accounts.update>[0]);
 }
 
 /** status da conta na Whop: active ou suspended. */
@@ -389,6 +414,17 @@ function mapVerificationStatus(status: string | undefined): KycSnapshot["status"
  * Account Link. Primeiro a lista de verifications; se ela vier vazia, o
  * status calculado da payout account no ledger.
  */
+export async function requireVerifiedSeller(
+  accountId: string,
+  amountUsd: number,
+  capUsd = 50,
+): Promise<void> {
+  const kyc = await syncKycStatus(accountId);
+  if (kyc.status === "verified") return;
+  if (amountUsd <= capUsd) return; // deixa testar com valor baixo até o KYC aprovar
+  throw new Error("Conclua a verificação da loja para vender acima do limite.");
+}
+
 export async function syncKycStatus(accountId: string): Promise<KycSnapshot> {
   const client = getWhop();
 
