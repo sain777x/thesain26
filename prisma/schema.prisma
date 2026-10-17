@@ -54,6 +54,12 @@ model Store {
   industryType String   @default("knowledge_business")
   /// ISO 3166-1 alpha-2. A Whop espera o país neste formato.
   country      String   @default("BR")
+  /// Endereço comercial -> business_address da Whop (imposto + verificação de endereço).
+  addressLine1   String?
+  addressLine2   String?
+  addressCity    String?
+  addressState   String?
+  addressPostal  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
