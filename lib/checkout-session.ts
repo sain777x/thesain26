@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { appUrl } from "@/lib/app-url";
 import { HttpError } from "@/lib/guards";
 import { feePercentFor } from "@/lib/platform";
-import { createDirectChargeCheckout, syncCheckoutProduct, whopErrorMessage } from "@/lib/whop";
+import { createDirectChargeCheckout, requireVerifiedSeller, syncCheckoutProduct, whopErrorMessage } from "@/lib/whop";
 
 export async function openProductCheckout(productId: string, priceId?: string | null) {
   const product = await prisma.product.findFirst({
@@ -25,6 +25,9 @@ export async function openProductCheckout(productId: string, priceId?: string | 
   if (!planId) {
     throw new HttpError(400, "Este produto ainda não tem checkout da Whop.");
   }
+
+  // KYC pendente -> bloqueia vendas acima do limite (modo suave: deixa testar pequeno).
+  await requireVerifiedSeller(product.seller.whopBizId, option?.amount ?? product.price);
 
   const feePercent = await feePercentFor(product.seller);
   const catalog = {
