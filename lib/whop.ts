@@ -170,14 +170,23 @@ export async function createAccountLink(params: {
   return link.url;
 }
 
-/** Portal autenticado da subconta, onde a Whop abre descrição, perfil e provas. */
-export async function businessReviewPortalUrl(accountId: string, origin: string) {
-  return createAccountLink({
-    accountId,
-    useCase: "payouts_portal",
-    returnUrl: `${origin}/painel/verificacoes?onboarding=return`,
-    refreshUrl: `${origin}/painel/verificacoes?onboarding=refresh`,
-  });
+/**
+ * Aba de pendência adicional da Whop (information request / verificação do negócio).
+ * O account link `payouts_portal` abre `/payouts/.../overview`, que é a tela de saque
+ * e não o pedido de informações. A própria Whop aponta essa pendência para
+ * `/dashboard/{biz}/settings/verifications/`.
+ */
+export async function businessReviewPortalUrl(accountId: string, _origin?: string) {
+  try {
+    const account = await getWhop().accounts.retrieve({ id: accountId });
+    const action = account.required_actions?.find(
+      (item) => item.action === "submit_information_request" && item.cta,
+    );
+    if (action?.cta) return action.cta;
+  } catch {
+    // A URL da aba continua válida mesmo se a leitura da conta falhar.
+  }
+  return `https://whop.com/dashboard/${accountId}/settings/verifications/`;
 }
 
 /**
