@@ -148,7 +148,7 @@ export async function syncCompanyProfile(accountId: string, input: CompanyProfil
     social_links: socialLinks,
     // Perfil completo: sai do None e fica mais segura na Whop.
     onboarding_type: "seller",
-    three_ds_level: "mandate_if_required",
+    three_ds_level: "frictionless_if_required",
     dispute_fighter_enabled: true,
     // Imposto: opção 2 da tela ("Whop collects and remits tax").
     tax_remitted_by: "whop",
