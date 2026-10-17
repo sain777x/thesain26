@@ -176,6 +176,14 @@ export function VerificationForm({
           });
           continue;
         }
+        if (field.selectionMode === "multiple" && (field.responseType === "url" || field.type === "url")) {
+          const values = String(form.get(field.id) ?? "")
+            .split(/\s+/)
+            .map((value) => value.trim())
+            .filter(Boolean);
+          answers.push({ id: field.id, values });
+          continue;
+        }
         if (field.type === "liveness") {
           answers.push({ id: field.id, value: form.get(field.id) === "on" ? "true" : "" });
           continue;
@@ -187,9 +195,12 @@ export function VerificationForm({
         };
         if (needsFiles(field) || field.requirement === "proof_of_fulfillment") {
           const picked = attachments[field.id] ?? [];
-          const requiresUpload = !field.optional && field.type !== "text";
-          if (requiresUpload && picked.length === 0) {
-            throw new Error(`Adicione pelo menos um arquivo em “${field.label}”.`);
+          const textOnly = field.type === "text" || field.type === "text_with_files";
+          if (picked.length === 0 && !textOnly) {
+            if (!field.optional) {
+              throw new Error(`Adicione pelo menos um arquivo em “${field.label}”.`);
+            }
+            continue;
           }
           answer.files = [];
           for (const [index, file] of picked.entries()) {
@@ -219,13 +230,14 @@ export function VerificationForm({
               : undefined,
         }),
       });
-      const data = (await response.json().catch(() => ({}))) as { error?: string; redirect?: string };
-      if (data.redirect) {
-        window.location.href = data.redirect;
-        return;
-      }
+      const data = (await response.json().catch(() => ({}))) as { error?: string; warning?: string };
       if (!response.ok) {
         throw new Error(data.error ?? "A análise não aceitou as respostas.");
+      }
+      if (data.warning) {
+        setError(data.warning);
+        router.refresh();
+        return;
       }
       setDone(true);
       router.refresh();
@@ -410,6 +422,28 @@ function TaxChoice({
   );
 }
 
+function CountedText({ name, required }: { name: string; required: boolean }) {
+  const [value, setValue] = useState("");
+  const count = value.trim().length;
+  return (
+    <div className="space-y-2">
+      <Textarea
+        id={name}
+        name={name}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        required={required || count < 100}
+        minLength={100}
+        maxLength={1000}
+        placeholder="Descreva o que você vende e como o comprador recebe"
+      />
+      <p className={count < 100 ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+        {count}/100 caracteres no mínimo · até 1000
+      </p>
+    </div>
+  );
+}
+
 function DescriptionField({ initial, required }: { initial: string; required: boolean }) {
   const [value, setValue] = useState(initial);
   const count = value.trim().length;
@@ -583,6 +617,16 @@ function FieldControl({
     field.type === "url" ||
     /social|website|perfil|rede/.test(field.requirement.toLowerCase())
   ) {
+    if (field.selectionMode === "multiple") {
+      return (
+        <Textarea
+          id={field.id}
+          name={field.id}
+          required={!field.optional}
+          placeholder={"https://seusite.com\nhttps://instagram.com/sua-loja"}
+        />
+      );
+    }
     return (
       <Input
         id={field.id}
@@ -600,6 +644,9 @@ function FieldControl({
     ) ||
     (field.type === "text" && field.label.length > 40)
   ) {
+    if (field.requirement === "business_description") {
+      return <CountedText name={field.id} required={!field.optional} />;
+    }
     return <Textarea id={field.id} name={field.id} required={!field.optional} />;
   }
 

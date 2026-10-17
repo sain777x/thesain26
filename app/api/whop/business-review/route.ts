@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { HttpError, requireSeller, toErrorResponse } from "@/lib/guards";
 import { MAX_VERIFICATION_FILES } from "@/lib/verification-files";
-import { appUrl } from "@/lib/app-url";
-import { businessReviewPortalUrl, presenceFromAnswers, saveBusinessPresence } from "@/lib/whop";
+import { presenceFromAnswers, saveBusinessPresence } from "@/lib/whop";
 import {
   assignVerificationAnswers,
   loadOpenInformation,
@@ -92,14 +91,16 @@ export async function POST(request: Request) {
       const seen = new Set(refreshed.map((item) => item.id));
       const open = refreshedHasProof ? refreshed : [...refreshed, ...before.filter((item) => !seen.has(item.id))];
       const assigned = assignVerificationAnswers(answers, open);
-      if (assigned.missingProof) {
-        const url = await businessReviewPortalUrl(user.whopBizId, appUrl());
-        return NextResponse.json({ redirect: url });
-      }
       if (assigned.groups.length === 0) {
         const hadRealAnswers = answers.some((answer) => answer.id !== PROOF_FIELD_ID);
         if (!hadRealAnswers && (description || socialUrl)) {
           return NextResponse.json({ ok: true });
+        }
+        if (assigned.missingProof) {
+          throw new HttpError(
+            400,
+            "A Whop ainda não abriu o pedido dos arquivos. Envie a descrição e o perfil; os arquivos entram quando esse item aparecer.",
+          );
         }
         throw new HttpError(400, "Não há informação pendente para enviar.");
       }
@@ -108,6 +109,13 @@ export async function POST(request: Request) {
           accountId: user.whopBizId,
           verificationId: group.verificationId,
           answers: group.answers,
+        });
+      }
+      if (assigned.missingProof) {
+        return NextResponse.json({
+          ok: true,
+          warning:
+            "A descrição e o perfil foram enviados. A Whop ainda não abriu o pedido dos arquivos, então eles não foram anexados.",
         });
       }
     }

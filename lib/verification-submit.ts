@@ -146,8 +146,9 @@ export function assignVerificationAnswers(answers: VerificationAnswer[], open: O
     const synthetic = answer.id === PROOF_FIELD_ID;
     const staleFileAnswer = !synthetic && !known && files.length > 0 && Boolean(proof);
     if (synthetic || staleFileAnswer) {
+      if (files.length === 0) continue;
       if (!proof) {
-        if (files.length > 0) missingProof = true;
+        missingProof = true;
         continue;
       }
       const bucket = groups.get(proof.verificationId) ?? [];
@@ -280,6 +281,11 @@ export async function submitVerificationAnswers(params: {
     if (item.type === "select" && item.selection_mode === "multiple") {
       const values = (answer.values ?? []).filter((value) => item.options?.includes(value));
       if (values.length === 0) throw new Error(`Escolha uma opção em “${item.label}”.`);
+      return { id: item.id, values };
+    }
+    if (item.selection_mode === "multiple" && (item.response_type === "url" || item.type === "url")) {
+      const values = (answer.values ?? []).map((value) => value.trim()).filter(Boolean);
+      if (values.length === 0) throw new Error(`Informe pelo menos um endereço em “${item.label}”.`);
       return { id: item.id, values };
     }
     if (item.type === "liveness") {

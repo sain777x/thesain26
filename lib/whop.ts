@@ -171,10 +171,9 @@ export async function createAccountLink(params: {
 }
 
 /**
- * Aba de pendência adicional da Whop (information request / verificação do negócio).
- * O account link `payouts_portal` abre `/payouts/.../overview`, que é a tela de saque
- * e não o pedido de informações. A própria Whop aponta essa pendência para
- * `/dashboard/{biz}/settings/verifications/`.
+ * Link secundário para a aba Verificações da Whop. Não é o caminho principal:
+ * essa URL exige login no painel da Whop e, sem sessão, cai em `/?next=...`.
+ * A resposta do pedido fica no formulário local, via PATCH /verifications.
  */
 export async function businessReviewPortalUrl(accountId: string, _origin?: string) {
   try {

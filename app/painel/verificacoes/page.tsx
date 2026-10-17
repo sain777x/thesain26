@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { VerificationForm } from "@/components/verification-form";
-import { buttonVariants } from "@/components/ui/button";
 import { ReloadAction } from "@/components/reload-action";
 import { appUrl } from "@/lib/app-url";
 import { requireSeller } from "@/lib/guards";
@@ -16,8 +15,12 @@ import {
   whopErrorMessage,
 } from "@/lib/whop";
 import {
+  isDescriptionRequest,
+  isSocialRequest,
+  isUploadField,
   taskStatusLabel,
   type IdentityLane,
+  type InformationField,
   type VerificationDesk,
   type VerificationTask,
 } from "@/lib/verification-tasks";
@@ -154,7 +157,6 @@ export default async function VerificacoesPage({
       error = error ?? whopErrorMessage(caught);
     }
   }
-  if (portalUrl) redirect(portalUrl);
 
   return (
     <div className="space-y-6">
@@ -234,7 +236,7 @@ export default async function VerificacoesPage({
                 {desk.businessReview.pendingReview ? (
                   <p className="text-sm">A Whop está analisando o que você enviou.</p>
                 ) : (
-                  <BusinessReview accountId={bizId} />
+                  <BusinessReview review={desk.businessReview} portalUrl={portalUrl} />
                 )}
               </CardContent>
             </Card>
@@ -335,18 +337,59 @@ function IdentityChoice({ lane, active }: { lane: IdentityLane; active: boolean 
   );
 }
 
-function BusinessReview({ accountId }: { accountId: string }) {
+function answerOrder(field: InformationField) {
+  if (isDescriptionRequest(field)) return 0;
+  if (isSocialRequest(field)) return 1;
+  if (isUploadField(field) || field.requirement === "proof_of_fulfillment") return 3;
+  return 2;
+}
+
+function BusinessReview({
+  review,
+  portalUrl,
+}: {
+  review: VerificationDesk["businessReview"];
+  portalUrl: string | null;
+}) {
+  const forms = review.tasks.filter((task) => task.resolve.kind === "form");
+  const profileAsked =
+    review.profile.askDescription || review.profile.askSocial || review.profile.askTax;
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        Essa pendência abre na aba Verificações da Whop, no pedido de informações do negócio. É a tela do botão Provide information, não a visão geral de saques.
-      </p>
-      <a
-        href={`https://whop.com/dashboard/${accountId}/settings/verifications/`}
-        className={cn(buttonVariants(), "h-10")}
-      >
-        Abrir a pendência adicional
-      </a>
+    <div className="space-y-6">
+      {forms.length > 0 ? (
+        forms.map((task, index) =>
+          task.resolve.kind === "form" ? (
+            <VerificationForm
+              key={task.id}
+              verificationId={task.resolve.verificationId}
+              fields={[...task.resolve.fields].sort((left, right) => answerOrder(left) - answerOrder(right))}
+              label={task.resolve.label}
+              profile={index === 0 ? review.profile : null}
+            />
+          ) : null,
+        )
+      ) : profileAsked ? (
+        <VerificationForm fields={[]} label="Enviar informações" profile={review.profile} />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Não há formulário pendente nesta seção agora. Atualize a página se a pendência continuar na lista.
+        </p>
+      )}
+      {portalUrl ? (
+        <div className="space-y-1">
+          <a
+            href={portalUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={cn(buttonVariants({ variant: "outline" }), "h-10 px-4")}
+          >
+            Abrir na Whop (requer login)
+          </a>
+          <p className="text-xs text-muted-foreground">
+            Só use este link se o formulário acima não mostrar algum campo pedido. Essa página pede login na Whop.
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

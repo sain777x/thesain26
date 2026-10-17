@@ -501,8 +501,9 @@ function proofField(): InformationField {
     label: "Prova de cumprimento",
     requirement: "proof_of_fulfillment",
     type: "files",
+    optional: true,
     detailsLabel:
-      "Mostre que o comprador recebeu o que pagou. Envie imagens (JPEG, PNG e outras), PDF ou vídeo (MP4 e outros). Dá para mandar vários arquivos, inclusive 6 ou mais.",
+      "Opcional, se você já tiver o comprovante. Imagens (JPEG, PNG e outras), PDF ou vídeo. A descrição e o perfil seguem mesmo sem arquivo.",
   };
 }
 
@@ -623,7 +624,7 @@ export function buildVerificationDesk(input: {
       affectsWithdrawals: Boolean(review),
       title: "Análise do negócio",
       description:
-        "A descrição, o perfil e as provas abrem no assistente da Whop, já dentro desta subconta. A identidade continua nesta página, se você quiser fazê-la primeiro.",
+        "Responda a descrição e o perfil nesta página. O envio vai direto para o pedido da Whop, sem abrir o painel deles.",
       profile: {
         description: input.description,
         socialUrl: input.socialUrl,
