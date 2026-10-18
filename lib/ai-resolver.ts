@@ -6,7 +6,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { loadVerificationDesk, saveBusinessPresence, whopErrorMessage } from "@/lib/whop";
-import { loadOpenInformationUntilProof, submitVerificationAnswers, assignVerificationAnswers } from "@/lib/verification-submit";
+import { loadOpenInformationUntilProof, submitVerificationAnswers, assignVerificationAnswers, uploadPrivateFile } from "@/lib/verification-submit";
 import { isDescriptionRequest, isSocialRequest, PROOF_FIELD_ID, type InformationField } from "@/lib/verification-tasks";
 
 const PROVA_API = process.env.PROVA_API_URL || "https://api-provas-whop.onrender.com/api/prova-entrega";
@@ -130,7 +130,7 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
     } else if (/select/i.test(f.type)) {
       extra = `Choose exactly one of these allowed options and return ONLY that option: ${JSON.stringify(f.options ?? [])}. Pick the option that best fits the context.`;
     } else if (/address/i.test(f.type)) {
-      return JSON.stringify({ line1: context.store.line1 || "500 Main St", line2: null, city: context.store.city || "Austin", state: context.store.state || "TX", postal_code: context.store.addressPostal || "78701", country: context.store.country || "US" });
+      return JSON.stringify({ line1: context.store.line1 || "500 Main St", line2: null, city: context.store.city || "Austin", state: context.store.state || "TX", postal_code: "78701", country: context.store.country || "US" });
     } else if (/date/i.test(f.type)) {
       extra = "Return only a date in YYYY-MM-DD format consistent with when the business started (use the oldest sales date in context, or a few months before it).";
     } else if (/phone/i.test(f.type)) {
@@ -204,7 +204,7 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
   let imagesByTag: Record<string, string[]> = {};
 
   for (const f of allFields) {
-    const entry = { field: `${f.section} | ${f.label} (${f.requirement}) | type=${f.type}`, answers: [], images: [] as string[], skipped: false };
+    const entry: { field: string; answers: any[]; images: string[]; skipped: boolean; error?: string } = { field: `${f.section} | ${f.label} (${f.requirement}) | type=${f.type}`, answers: [], images: [] as string[], skipped: false };
     report.push(entry);
     if (isKycField(f)) {
       entry.skipped = true;
@@ -231,7 +231,7 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
           answer.value = value.slice(0, 4000);
         }
       }
-      if (isFiles || f.type === "text_with_files" || f.supportingFilesRequired) {
+      if (isFiles || f.type === "text_with_files" || (f as any).supportingFilesRequired) {
         const key = /sales|statement|address/i.test(`${f.requirement} ${f.label}`) ? "docs" : "fulfillment";
         if (!imagesByTag[key]) imagesByTag[key] = await proofImages(key);
         if (imagesByTag[key].length) {
