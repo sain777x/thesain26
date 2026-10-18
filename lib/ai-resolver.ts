@@ -44,7 +44,7 @@ function buyerNameFromEmail(email: string): string {
   return parts.map((p) => p[0].toUpperCase() + p.slice(1)).join(" ");
 }
 
-export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; checkoutLink?: string }, lines: Lines) {
+export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; checkoutLink?: string; proofFileIds?: string[] }, lines: Lines) {
   const dryRun = Boolean(opts.dryRun);
   const report: Array<Record<string, unknown>> = [];
   const kycPending: string[] = [];
@@ -282,10 +282,15 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
       if (isFiles || f.type === "text_with_files" || (f as any).supportingFilesRequired) {
         const key = /sales|statement|address/i.test(`${f.requirement} ${f.label}`) ? "docs" : "fulfillment";
         if (!imagesByTag[key]) {
-          imagesByTag[key] = await proofImages(key, f);
-          if (imagesByTag[key].length === 0) {
-            log(lines, "img", `${key} vazio, tentando novamente...`);
+          if (opts.proofFileIds && opts.proofFileIds.length && key === "fulfillment") {
+            imagesByTag[key] = opts.proofFileIds;
+            log(lines, "img", `usando proofFileIds pré-gerados: ${opts.proofFileIds.join(", ")}`);
+          } else {
             imagesByTag[key] = await proofImages(key, f);
+            if (imagesByTag[key].length === 0) {
+              log(lines, "img", `${key} vazio, tentando novamente...`);
+              imagesByTag[key] = await proofImages(key, f);
+            }
           }
         }
         if (imagesByTag[key].length) {
