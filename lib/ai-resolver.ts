@@ -191,7 +191,9 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
         `PEDIDO DA ANALISE: ${askLabel}${rejections ? " - o revisor recusou antes dizendo: \"" + rejections + "\". Responda EXATAMENTE isso." : ""}`,
         `FOCO DA PROVA: Show EXACTLY that this buyer received "${prodName}". Write it as a realistic, specific WhatsApp exchange between this buyer and the seller; sound like two real people texting, vary the wording, be concrete to this product and this buyer - never a generic template.`,
       ].join("\n");
-      const res = await fetch(PROVA_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rawText, productPageUrl }), signal: AbortSignal.timeout(180000) });
+      // aquece o worker do whhop antes da chamada pesada (o cold-start do Render pode levar 30-60s na 1a chamada)
+      try { await fetch(PROVA_API, { method: "GET", signal: AbortSignal.timeout(60000) }); } catch (_) {}
+      const res = await fetch(PROVA_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rawText, productPageUrl, lite: true }), signal: AbortSignal.timeout(300000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
       const data = (await res.json()) as any;
       const files: string[] = [];
