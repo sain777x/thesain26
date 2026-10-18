@@ -3,7 +3,6 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BusinessInfoForm } from "@/components/business-info-form";
-import { BusinessRfi } from "@/components/business-rfi";
 import { VerificationForm } from "@/components/verification-form";
 import { ReloadAction } from "@/components/reload-action";
 import { appUrl } from "@/lib/app-url";
@@ -299,7 +298,10 @@ export default async function VerificacoesPage({
                       </ul>
                     ) : null}
                     {task.id === "business-review-rfi" && bizId ? (
-                      <BusinessRfi accountId={bizId} />
+                      <BusinessInfoForm
+                        initialDescription={desk.businessReview.profile.description}
+                        initialSocial={desk.businessReview.profile.socialUrl}
+                      />
                     ) : task.resolve.kind === "form" ? (
                       <VerificationForm
                         verificationId={task.resolve.verificationId}
