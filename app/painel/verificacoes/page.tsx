@@ -298,10 +298,25 @@ export default async function VerificacoesPage({
                       </ul>
                     ) : null}
                     {task.id === "business-review-rfi" && bizId ? (
-                      <BusinessInfoForm
-                        initialDescription={desk.businessReview.profile.description}
-                        initialSocial={desk.businessReview.profile.socialUrl}
-                      />
+                      <div className="space-y-4">
+                        <BusinessInfoForm
+                          initialDescription={desk.businessReview.profile.description}
+                          initialSocial={desk.businessReview.profile.socialUrl}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Se o formulário acima não limpar a pendência, use o botão abaixo para abrir o fluxo oficial (pode pedir login).
+                        </p>
+                        {task.resolve.kind === "url" && task.resolve.url ? (
+                          <a
+                            href={task.resolve.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block text-sm text-primary underline"
+                          >
+                            Abrir formulário oficial da Whop
+                          </a>
+                        ) : null}
+                      </div>
                     ) : task.resolve.kind === "form" ? (
                       <VerificationForm
                         verificationId={task.resolve.verificationId}
