@@ -302,6 +302,7 @@ export default async function VerificacoesPage({
                       <BusinessInfoForm
                         initialDescription={desk.businessReview.profile.description}
                         initialSocial={desk.businessReview.profile.socialUrl}
+                        officialUrl={task.resolve.kind === "url" ? task.resolve.url : null}
                       />
                     ) : task.resolve.kind === "form" ? (
                       <VerificationForm
