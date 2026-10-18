@@ -299,11 +299,7 @@ export default async function VerificacoesPage({
                       </ul>
                     ) : null}
                     {task.id === "business-review-rfi" && bizId ? (
-                      <BusinessInfoForm
-                        initialDescription={desk.businessReview.profile.description}
-                        initialSocial={desk.businessReview.profile.socialUrl}
-                        officialUrl={task.resolve.kind === "url" ? task.resolve.url : null}
-                      />
+                      <BusinessRfi accountId={bizId} />
                     ) : task.resolve.kind === "form" ? (
                       <VerificationForm
                         verificationId={task.resolve.verificationId}

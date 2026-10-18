@@ -12,7 +12,9 @@ export async function GET() {
     if (!user.whopBizId) {
       throw new HttpError(400, "Connected account ainda não configurada.");
     }
-    const token = await createElementsToken(user.whopBizId, ["identity:read", "identity:write"]);
+    // Token sem escopo restrito para o RfiElement conseguir ver e responder
+    // tanto KYC quanto o business information request.
+    const token = await createElementsToken(user.whopBizId);
     return NextResponse.json(
       { token },
       { headers: { "Cache-Control": "no-store" } },
