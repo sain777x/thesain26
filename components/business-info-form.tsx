@@ -44,18 +44,21 @@ export function BusinessInfoForm({
     <div className="space-y-5">
       {officialUrl ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm">
-          <p className="font-medium text-amber-900">Para limpar a pendência na Whop</p>
+          <p className="font-medium text-amber-900">Enviar direto pelo site</p>
           <p className="mt-1 text-amber-800">
-            A Whop só remove o pedido quando o formulário oficial é preenchido. Clique no botão abaixo, complete os passos e depois volte aqui e clique em Atualizar.
+            Preencha os campos abaixo e clique em Enviar. A resposta vai para a Whop sem sair do thesain26.
           </p>
-          <a
-            href={officialUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 inline-block rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
-          >
-            Abrir formulário oficial da Whop
-          </a>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs text-amber-700">Ou abrir o formulário oficial da Whop</summary>
+            <a
+              href={officialUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block text-xs text-amber-800 underline"
+            >
+              Abrir formulário oficial (pode pedir login)
+            </a>
+          </details>
         </div>
       ) : null}
 
@@ -63,7 +66,7 @@ export function BusinessInfoForm({
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {ok ? (
           <p className="text-sm text-green-700">
-            Descrição e rede social atualizadas na conta. A pendência só some depois que você completar o formulário oficial da Whop.
+            Informações enviadas para a Whop. Clique em Atualizar para conferir se a pendência sumiu.
           </p>
         ) : null}
         <div className="space-y-1.5">

@@ -113,6 +113,69 @@ export async function loadOpenInformation(accountId: string): Promise<OpenInform
       });
     }
   }
+
+  // Se não há RFI formal mas a conta tem submit_information_request,
+  // cria a verificação de negócio para obter as perguntas reais.
+  if (items.length === 0) {
+    try {
+      const account = await client.accounts.retrieve({ id: accountId });
+      const hasInfoRequest = (account.required_actions ?? []).some(
+        (a) => a.action === "submit_information_request",
+      );
+      if (hasInfoRequest) {
+        return await ensureBusinessVerification(accountId);
+      }
+    } catch (error) {
+      console.error("[thesain26] ensureBusinessVerification check", whopErrorMessage(error));
+    }
+  }
+
+  return items;
+}
+
+/** Garante que existe uma verificação de negócio e devolve os pedidos abertos.
+ *  Usado quando a Whop só tem required_action (submit_information_request)
+ *  e ainda não criou o objeto de verificação. */
+export async function ensureBusinessVerification(accountId: string): Promise<OpenInformation[]> {
+  const client = getWhop();
+  const list = await client.verifications.list({ account_id: accountId });
+  let business = (list.data ?? []).find((v) => v.kind === "business" && v.status !== "approved");
+
+  if (!business) {
+    try {
+      // @ts-ignore - SDK may or may not type create; raw call works
+      const created = await (client.verifications as any).create({
+        account_id: accountId,
+        kind: "business",
+      });
+      if (created?.id) business = created;
+    } catch (error) {
+      console.error("[thesain26] verifications.create business", whopErrorMessage(error));
+    }
+  }
+
+  if (!business?.id) return [];
+
+  let full = business;
+  try {
+    full = await client.verifications.retrieve({ id: business.id });
+  } catch (error) {
+    console.error("[thesain26] verifications.retrieve", whopErrorMessage(error));
+  }
+
+  const items: OpenInformation[] = [];
+  for (const item of full.requested_information ?? []) {
+    const raw = item as typeof item & { field?: string | null };
+    items.push({
+      verificationId: full.id!,
+      id: item.id,
+      requirement: requirementOf(raw),
+      label: item.label,
+      type: item.type,
+      responseType: item.response_type,
+      supportingFilesRequired: item.supporting_files_required,
+    });
+  }
   return items;
 }
 

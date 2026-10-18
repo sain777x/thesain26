@@ -70,12 +70,24 @@ export async function POST(request: Request) {
     const description = body.description || copied.description;
     const socialUrl = body.socialUrl || copied.socialUrl;
 
-    // Caso especial: Whop pediu informações via required_action (sem RFI formal)
-    // mas o usuário está enviando descrição + social. Nesse caso só salvamos a presença.
-    const hasPresence = Boolean(description || socialUrl || body.taxHandling);
-    const assigned = assignVerificationAnswers(answers, before);
+    // Se o usuário enviou descrição/social e existem itens abertos correspondentes,
+    // monta as answers automaticamente.
+    let finalAnswers = [...answers];
+    if (description || socialUrl) {
+      for (const item of before) {
+        if (item.requirement === "business_description" && description && !finalAnswers.some((a) => a.id === item.id)) {
+          finalAnswers.push({ id: item.id, value: description });
+        }
+        if ((item.requirement === "social_media_or_website" || item.requirement === "website") && socialUrl && !finalAnswers.some((a) => a.id === item.id)) {
+          finalAnswers.push({ id: item.id, value: socialUrl });
+        }
+      }
+    }
+
+    const assigned = assignVerificationAnswers(finalAnswers, before);
 
     if (assigned.groups.length === 0) {
+      const hasPresence = Boolean(description || socialUrl || body.taxHandling);
       if (hasPresence && answers.length === 0) {
         // Nenhum RFI formal, mas temos dados de presença para salvar
         try {
