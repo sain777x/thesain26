@@ -105,14 +105,15 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
     /ssn|verify_identity|prova de vida|selfie/.test(`${f.requirement} ${f.label}`.toLowerCase());
 
   // ---------------- helpers de resposta ----------------
-  const priceStr = (b: Buyer) => `${b.currency.toUpperCase()} ${b.amount.toFixed(2)`.replace(".00", "");
+  const priceStr = (b: Buyer) => `${b.currency.toUpperCase()} ${b.amount.toFixed(2)}`.replace(".00", "");
 
   function promptBase(f: InformationField & { section: string }) {
     const errs = (f.errors ?? []).filter(Boolean).join("; ");
+    const optsPart = f.options ? " options=" + JSON.stringify(f.options) : "";
     return [
       "CONTEXT OF A REAL STORE ON WHOP (answer from this data only, invent nothing):",
       JSON.stringify(context, null, 1),
-      `FIELD REQUESTED BY WHOP: label="${f.label}" requirement="${f.requirement}" type="${f.type}"${f.options ? ` options=${JSON.stringify(f.options)}` : ""}`,
+      `FIELD REQUESTED BY WHOP: label="${f.label}" requirement="${f.requirement}" type="${f.type}"${optsPart}`,
       f.detailsLabel ? `details: ${f.detailsLabel}` : "",
       errs ? `PREVIOUS REJECTION REASONS (fix each one explicitly in the answer): ${errs}` : "",
     ].filter(Boolean).join("\n");
