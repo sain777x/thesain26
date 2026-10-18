@@ -6,7 +6,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { loadVerificationDesk, saveBusinessPresence, whopErrorMessage } from "@/lib/whop";
-import { loadOpenInformationUntilProof, submitVerificationAnswers, assignVerificationAnswers, uploadPrivateFile } from "@/lib/verification-submit";
+import { loadOpenInformationUntilProof, submitVerificationAnswers, assignVerificationAnswers } from "@/lib/verification-submit";
 import { isDescriptionRequest, isSocialRequest, PROOF_FIELD_ID, type InformationField } from "@/lib/verification-tasks";
 
 const PROVA_API = process.env.PROVA_API_URL || "https://api-provas-whop.onrender.com/api/prova-entrega";
@@ -100,6 +100,22 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
   }
   log(lines, "fields", JSON.stringify(allFields.map((f) => ({ id: f.id, req: f.requirement, label: f.label, type: f.type, section: f.section, errors: f.errors })), null, 1));
 
+  // A lista OFICIAL de campos abertos na Whop é a fonte do despacho.
+  // O desk serve só para herdar erros anteriores por id (motivos de rejeição).
+  const openFields = await loadOpenInformationUntilProof(bizId, 2);
+  log(lines, "open", JSON.stringify(openFields, null, 1));
+  const deskById = new Map(allFields.map((f) => [String(f.id), f]));
+  for (const o of openFields) {
+    const prev = deskById.get(String(o.id));
+    deskById.delete(String(o.id));
+    allFields.push({
+      ...o,
+      ...(prev?.errors?.length ? { errors: prev.errors } : {}),
+      ...(prev?.detailsLabel ? { detailsLabel: prev.detailsLabel } : {}),
+      section: "whop",
+    });
+  }
+
   const isKycField = (f: InformationField) =>
     /id_document|liveness|passport|drivers|residence_permit/.test(f.type) ||
     /ssn|verify_identity|prova de vida|selfie/.test(`${f.requirement} ${f.label}`.toLowerCase());
@@ -130,7 +146,7 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
     } else if (/select/i.test(f.type)) {
       extra = `Choose exactly one of these allowed options and return ONLY that option: ${JSON.stringify(f.options ?? [])}. Pick the option that best fits the context.`;
     } else if (/address/i.test(f.type)) {
-      return JSON.stringify({ line1: context.store.line1 || "500 Main St", line2: null, city: context.store.city || "Austin", state: context.store.state || "TX", postal_code: "78701", country: context.store.country || "US" });
+      return JSON.stringify({ line1: context.store.line1 || "500 Main St", line2: null, city: context.store.city || "Austin", state: context.store.state || "TX", postal_code: context.store.addressPostal || "78701", country: context.store.country || "US" });
     } else if (/date/i.test(f.type)) {
       extra = "Return only a date in YYYY-MM-DD format consistent with when the business started (use the oldest sales date in context, or a few months before it).";
     } else if (/phone/i.test(f.type)) {
@@ -204,7 +220,7 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
   let imagesByTag: Record<string, string[]> = {};
 
   for (const f of allFields) {
-    const entry: { field: string; answers: any[]; images: string[]; skipped: boolean; error?: string } = { field: `${f.section} | ${f.label} (${f.requirement}) | type=${f.type}`, answers: [], images: [] as string[], skipped: false };
+    const entry = { field: `${f.section} | ${f.label} (${f.requirement}) | type=${f.type}`, answers: [], images: [] as string[], skipped: false };
     report.push(entry);
     if (isKycField(f)) {
       entry.skipped = true;
@@ -216,7 +232,10 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
     const wantsText = !/files?/.test(f.type) && f.type !== "id_document";
 
     try {
-      const value = wantsText ? await textAnswer(f) : "";
+      let value = wantsText ? await textAnswer(f) : "";
+      if (wantsText && isDescriptionRequest(f) && value.length < 110) {
+        value += ` Buyers purchase ${product?.name || "the program"} for ${priceStr(primaryBuyer)} and get instant automatic access immediately after payment.`;
+      }
       const answer: any = { id: f.id };
       entry.answers.push(answer);
       if (wantsText) {
@@ -231,7 +250,7 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
           answer.value = value.slice(0, 4000);
         }
       }
-      if (isFiles || f.type === "text_with_files" || (f as any).supportingFilesRequired) {
+      if (isFiles || f.type === "text_with_files" || f.supportingFilesRequired) {
         const key = /sales|statement|address/i.test(`${f.requirement} ${f.label}`) ? "docs" : "fulfillment";
         if (!imagesByTag[key]) imagesByTag[key] = await proofImages(key);
         if (imagesByTag[key].length) {
@@ -253,8 +272,7 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
   }
 
   // ---------------- submissão ----------------
-  const open = await loadOpenInformationUntilProof(bizId, 2);
-  log(lines, "open", JSON.stringify(open, null, 1));
+  const open = openFields;
   const synthetic = Object.values(imagesByTag).flat();
   if (synthetic.length && !answerById.has(PROOF_FIELD_ID)) {
     const proofLike = open.find((o) => /fulfill|proof/i.test(`${o.requirement} ${o.label}`));
