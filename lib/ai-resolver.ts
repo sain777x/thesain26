@@ -140,7 +140,12 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
     if (isDescriptionRequest(f)) {
       extra = `Write the store/business description. RULES: first sentence begins with the exact owner name "${context.user.name}"; use the niche of the product verbatim; mention the self-paced program and that access is delivered automatically right after payment; state where the business operates (${context.store.city || context.store.country}); no numbers, years or awards; 120 to 900 characters; plain English.`;
     } else if (isSocialRequest(f)) {
-      const url = context.store.website || context.store.socialUrl || context.store.instagram || "";
+      const storePage = `${APP_URL}/loja/${context.store.slug}`;
+      const socialErr = (f.errors ?? []).join(" ").toLowerCase();
+      const rejectedMismatch = /match|actual|different|confirm|coincide|correspond|nome|name/.test(socialErr);
+      // se a Whop recusou o perfil por nao casar com o nome, devolve a pagina da loja
+      // (o slug = nome do dono), que e um site real e auto-referente
+      const url = rejectedMismatch ? storePage : (context.store.website || context.store.socialUrl || context.store.instagram || "");
       if (url) return url;
       extra = "Return only the best existing public profile URL from the context.";
     } else if (/select/i.test(f.type)) {
