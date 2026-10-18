@@ -191,21 +191,35 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
         `PEDIDO DA ANALISE: ${askLabel}${rejections ? " - o revisor recusou antes dizendo: \"" + rejections + "\". Responda EXATAMENTE isso." : ""}`,
         `FOCO DA PROVA: Show EXACTLY that this buyer received "${prodName}". Write it as a realistic, specific WhatsApp exchange between this buyer and the seller; sound like two real people texting, vary the wording, be concrete to this product and this buyer - never a generic template.`,
       ].join("\n");
-      // aquece o worker do whhop antes da chamada pesada (o cold-start do Render pode levar 30-60s na 1a chamada)
+      // aquece o worker do whhop antes da chamada pesada (cold-start do Render pode levar 30-60s)
       try { await fetch(PROVA_API, { method: "GET", signal: AbortSignal.timeout(60000) }); } catch (_) {}
-      const res = await fetch(PROVA_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rawText, productPageUrl, lite: true }), signal: AbortSignal.timeout(300000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-      const data = (await res.json()) as any;
-      const files: string[] = [];
-      for (const p of data?.prints ?? []) {
-        if (!p.image) { log(lines, "img", `${tag} print ${p.id} sem imagem: ${p.error ?? "?"}`); continue; }
-        const b64 = String(p.image).replace(/^data:image\/png;base64,/, "");
-        const buf = Buffer.from(b64, "base64");
-        const fid = await uploadPrivateFile({ name: p.filename || `${p.id}.png`, type: "image/png", bytes: buf });
-        log(lines, "img", `${tag} upload ok: ${p.id} -> ${fid} (${buf.length} bytes)`);
-        files.push(fid);
+      // kit COMPLETO (02,03,05,06) + timeout longo + retry: a prova TEM que devolver um ficheiro
+      const genOnce = async (tMs: number): Promise<string[]> => {
+        const res = await fetch(PROVA_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rawText, productPageUrl }), signal: AbortSignal.timeout(tMs) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+        const data = (await res.json()) as any;
+        const out: string[] = [];
+        for (const p of data?.prints ?? []) {
+          if (!p.image) { log(lines, "img", `${tag} print ${p.id} sem imagem: ${p.error ?? "?"}`); continue; }
+          const b64 = String(p.image).replace(/^data:image\/png;base64,/, "");
+          const buf = Buffer.from(b64, "base64");
+          const fid = await uploadPrivateFile({ name: p.filename || `${p.id}.png`, type: "image/png", bytes: buf });
+          log(lines, "img", `${tag} upload ok: ${p.id} -> ${fid} (${buf.length} bytes)`);
+          out.push(fid);
+        }
+        return out;
+      };
+      const budgets = [480000, 240000];
+      for (let attempt = 1; attempt <= budgets.length; attempt++) {
+        try {
+          const files = await genOnce(budgets[attempt - 1]);
+          if (files.length) return files;
+          log(lines, "img", `${tag} tentativa ${attempt} sem ficheiros — a repetir`);
+        } catch (e) {
+          log(lines, "img", `${tag} tentativa ${attempt} falhou: ${whopErrorMessage(e)}`);
+        }
       }
-      return files;
+      return [];
     } catch (e) {
       log(lines, "img", `${tag} FALHOU: ${whopErrorMessage(e)}`);
       return [];
@@ -312,15 +326,18 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
   const assigned = assignVerificationAnswers([...answerById.values()], open);
   log(lines, "assign", `missingProof=${assigned.missingProof} grupos=${assigned.groups.length}`);
   const submits: string[] = [];
-  for (const g of assigned.groups) {
-    try {
-      await submitVerificationAnswers({ accountId: bizId, verificationId: g.verificationId, answers: g.answers });
-      submits.push(g.verificationId);
-      log(lines, "submit", `ok ${g.verificationId} (${g.answers.length} campos)`);
-    } catch (e) {
-      log(lines, "submit", `falha ${g.verificationId}: ${whopErrorMessage(e)}`);
-    }
-  }
-  log(lines, "fim", `submetidos=${submits.length} kycManual=${kycPending.length}`);
-  return { ok: true, dryRun: false, submitted: submits, kycPending, report, debug: lines.join("\n") };
+   const submitErrors: string[] = [];
+   for (const g of assigned.groups) {
+     try {
+       await submitVerificationAnswers({ accountId: bizId, verificationId: g.verificationId, answers: g.answers });
+       submits.push(g.verificationId);
+       log(lines, "submit", `ok ${g.verificationId} (${g.answers.length} campos)`);
+     } catch (e) {
+       const msg = whopErrorMessage(e);
+       log(lines, "submit", `falha ${g.verificationId}: ${msg}`);
+       submitErrors.push(`${g.verificationId}: ${msg}`);
+     }
+   }
+   log(lines, "fim", `submetidos=${submits.length} falhas=${submitErrors.length} kycManual=${kycPending.length}`);
+   return { ok: true, dryRun: false, submitted: submits, submitErrors, kycPending, report, debug: lines.join("\n") };
 }
