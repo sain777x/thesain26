@@ -6,7 +6,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { loadVerificationDesk, saveBusinessPresence, whopErrorMessage } from "@/lib/whop";
-import { loadOpenInformationUntilProof, submitVerificationAnswers, assignVerificationAnswers } from "@/lib/verification-submit";
+import { loadOpenInformationUntilProof, submitVerificationAnswers, assignVerificationAnswers, uploadPrivateFile } from "@/lib/verification-submit";
 import { isDescriptionRequest, isSocialRequest, PROOF_FIELD_ID, type InformationField } from "@/lib/verification-tasks";
 
 const PROVA_API = process.env.PROVA_API_URL || "https://api-provas-whop.onrender.com/api/prova-entrega";
@@ -75,7 +75,7 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
   if (opts.checkoutLink) productPageUrl = opts.checkoutLink;
 
   const context = {
-    store: { name: store.name, slug: store.slug, description: store.description, socialUrl: store.socialUrl, website: store.website, instagram: store.instagram, city: store.addressCity, state: store.addressState, country: store.country, line1: store.addressLine1 },
+    store: { name: store.name, slug: store.slug, description: store.description, socialUrl: store.socialUrl, website: store.website, instagram: store.instagram, city: store.addressCity, state: store.addressState, country: store.country, line1: store.addressLine1, addressPostal: (store as any).addressPostal ?? null },
     user: { name: user.name },
     product: product ? { name: product.name, subtitle: product.subtitle, description: product.description, price: product.price, currency: product.currency, deliveryMethod: product.deliveryMethod, pageUrl: productPageUrl } : null,
     buyers,
@@ -233,7 +233,7 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
   let imagesByTag: Record<string, string[]> = {};
 
   for (const f of allFields) {
-    const entry = { field: `${f.section} | ${f.label} (${f.requirement}) | type=${f.type}`, answers: [], images: [] as string[], skipped: false };
+    const entry = { field: `${f.section} | ${f.label} (${f.requirement}) | type=${f.type}`, answers: [] as any[], images: [] as string[], skipped: false, error: "" as string };
     report.push(entry);
     if (isKycField(f)) {
       entry.skipped = true;
@@ -263,7 +263,7 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
           answer.value = value.slice(0, 4000);
         }
       }
-      if (isFiles || f.type === "text_with_files" || f.supportingFilesRequired) {
+      if (isFiles || f.type === "text_with_files" || (f as any).supportingFilesRequired) {
         const key = /sales|statement|address/i.test(`${f.requirement} ${f.label}`) ? "docs" : "fulfillment";
         if (!imagesByTag[key]) imagesByTag[key] = await proofImages(key, f);
         if (imagesByTag[key].length) {
