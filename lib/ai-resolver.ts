@@ -267,10 +267,18 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
       }
       if (isFiles || f.type === "text_with_files" || (f as any).supportingFilesRequired) {
         const key = /sales|statement|address/i.test(`${f.requirement} ${f.label}`) ? "docs" : "fulfillment";
-        if (!imagesByTag[key]) imagesByTag[key] = await proofImages(key, f);
+        if (!imagesByTag[key]) {
+          imagesByTag[key] = await proofImages(key, f);
+          if (imagesByTag[key].length === 0) {
+            log(lines, "img", `${key} vazio, tentando novamente...`);
+            imagesByTag[key] = await proofImages(key, f);
+          }
+        }
         if (imagesByTag[key].length) {
           answer.files = imagesByTag[key];
           entry.images = imagesByTag[key];
+        } else {
+          log(lines, "img", `${key} sem imagem — campo de prova será omitido para não bloquear o envio`);
         }
       }
       log(lines, "answer", JSON.stringify(answer).slice(0, 900));
@@ -290,8 +298,14 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
   const open = openFields;
   const synthetic = Object.values(imagesByTag).flat();
   const proofLikeOpen = open.find((o) => /fulfill|proof/i.test(`${o.requirement} ${o.label}`));
-  // injeta o PROOF sintético só se ainda não existir resposta p/ o pedido de prova
-  // (evita duplicar os mesmos file ids na submissão da proof of fulfillment)
+  // remove answers de prova que ficaram sem arquivo (senão a Whop rejeita o envio inteiro)
+  for (const [id, ans] of [...answerById.entries()]) {
+    const isProofAns = id === PROOF_FIELD_ID || (proofLikeOpen && id === proofLikeOpen.id);
+    if (isProofAns && (!ans.files || ans.files.length === 0)) {
+      answerById.delete(id);
+      log(lines, "img", `removendo answer de prova sem arquivo (${id}) para não bloquear o envio`);
+    }
+  }
   if (synthetic.length && !answerById.has(PROOF_FIELD_ID) && !(proofLikeOpen && answerById.has(proofLikeOpen.id))) {
     if (proofLikeOpen) answerById.set(PROOF_FIELD_ID, { id: PROOF_FIELD_ID, files: synthetic.filter(Boolean) });
   }
