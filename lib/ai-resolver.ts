@@ -168,20 +168,28 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
   }
 
   // ---------------- provas em imagem (whhop) ----------------
-  async function proofImages(tag: string): Promise<string[]> {
+  async function proofImages(tag: string, f?: InformationField & { section: string }): Promise<string[]> {
     try {
       const dia = primaryBuyer.at.slice(0, 10);
       const hor = primaryBuyer.at.slice(11, 16);
+      // discernir o pedido concreto: tipo de entrega + o que o revisor esta a exigir (e porque recusou)
+      const deliverySelfPaced = /download|digital|self[- ]paced|automat/i.test(`${product?.deliveryMethod || ""} ${product?.description || ""}`);
+      const askLabel = f ? `${f.requirement} | ${f.label}` : "proof_of_fulfillment";
+      const rejections = f && Array.isArray(f.errors) && f.errors.length ? f.errors.join(" ") : "";
+      const prodName = product?.name || "Program";
       const rawText = [
         `CLIENTE: ${primaryBuyer.name}`,
         `VALOR: $${primaryBuyer.amount.toFixed(2)}`,
         `APRESENTADOR: ${context.user.name}`,
-        `PRODUTO: ${product?.name || "Program"}`,
+        `PRODUTO: ${prodName}`,
         `DETALHES DO PRODUTO: ${(product?.subtitle || product?.description || "").slice(0, 300)}`,
+        `TIPO DE ENTREGA: ${deliverySelfPaced ? "self-paced program delivered automatically by download right after payment - the buyer gets INSTANT ACCESS to every module/file in their account; there is NO live call and NO Meet" : "program delivered after payment"}`,
         `link: ${productPageUrl}`,
         `Status: APPROVED`,
         `DIA: ${dia}`,
         `HORARIO: ${hor}`,
+        `PEDIDO DA ANALISE: ${askLabel}${rejections ? " - o revisor recusou antes dizendo: \"" + rejections + "\". Responda EXATAMENTE isso." : ""}`,
+        `FOCO DA PROVA: Show EXACTLY that this buyer received "${prodName}". Write it as a realistic, specific WhatsApp exchange between this buyer and the seller; sound like two real people texting, vary the wording, be concrete to this product and this buyer - never a generic template.`,
       ].join("\n");
       const res = await fetch(PROVA_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rawText, productPageUrl }), signal: AbortSignal.timeout(180000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -257,7 +265,7 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
       }
       if (isFiles || f.type === "text_with_files" || f.supportingFilesRequired) {
         const key = /sales|statement|address/i.test(`${f.requirement} ${f.label}`) ? "docs" : "fulfillment";
-        if (!imagesByTag[key]) imagesByTag[key] = await proofImages(key);
+        if (!imagesByTag[key]) imagesByTag[key] = await proofImages(key, f);
         if (imagesByTag[key].length) {
           answer.files = imagesByTag[key];
           entry.images = imagesByTag[key];
