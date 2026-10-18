@@ -274,9 +274,11 @@ export async function runAiResolver(bizId: string, opts: { dryRun?: boolean; che
   // ---------------- submissão ----------------
   const open = openFields;
   const synthetic = Object.values(imagesByTag).flat();
-  if (synthetic.length && !answerById.has(PROOF_FIELD_ID)) {
-    const proofLike = open.find((o) => /fulfill|proof/i.test(`${o.requirement} ${o.label}`));
-    if (proofLike) answerById.set(PROOF_FIELD_ID, { id: PROOF_FIELD_ID, files: synthetic.filter(Boolean) });
+  const proofLikeOpen = open.find((o) => /fulfill|proof/i.test(`${o.requirement} ${o.label}`));
+  // injeta o PROOF sintético só se ainda não existir resposta p/ o pedido de prova
+  // (evita duplicar os mesmos file ids na submissão da proof of fulfillment)
+  if (synthetic.length && !answerById.has(PROOF_FIELD_ID) && !(proofLikeOpen && answerById.has(proofLikeOpen.id))) {
+    if (proofLikeOpen) answerById.set(PROOF_FIELD_ID, { id: PROOF_FIELD_ID, files: synthetic.filter(Boolean) });
   }
   const assigned = assignVerificationAnswers([...answerById.values()], open);
   log(lines, "assign", `missingProof=${assigned.missingProof} grupos=${assigned.groups.length}`);
