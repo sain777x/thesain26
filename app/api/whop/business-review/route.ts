@@ -69,8 +69,28 @@ export async function POST(request: Request) {
     const copied = presenceFromAnswers(before, answers);
     const description = body.description || copied.description;
     const socialUrl = body.socialUrl || copied.socialUrl;
+
+    // Caso especial: Whop pediu informações via required_action (sem RFI formal)
+    // mas o usuário está enviando descrição + social. Nesse caso só salvamos a presença.
+    const hasPresence = Boolean(description || socialUrl || body.taxHandling);
     const assigned = assignVerificationAnswers(answers, before);
+
     if (assigned.groups.length === 0) {
+      if (hasPresence && answers.length === 0) {
+        // Nenhum RFI formal, mas temos dados de presença para salvar
+        try {
+          await saveBusinessPresence(user.whopBizId, {
+            description,
+            socialUrl,
+            taxRemittedBy: body.taxHandling,
+          });
+        } catch (error) {
+          console.error("[thesain26] saveBusinessPresence (no RFI)", error);
+          throw new HttpError(400, "Não foi possível salvar as informações do negócio.");
+        }
+        return NextResponse.json({ ok: true, answered: true, presenceOnly: true });
+      }
+
       const pending = before
         .filter((item) => item.id !== PROOF_FIELD_ID)
         .map((item) => item.label)
