@@ -25,7 +25,7 @@ export default function PainelTokenPage() {
   const token = params.token as string;
   
   if (token !== VALID_TOKEN) {
-    return <div className="p-8 text-center">404</div>;
+    return <div className="p-8 text-center text-muted-foreground">404</div>;
   }
 
   const [key, setKey] = useState("");
@@ -55,7 +55,7 @@ export default function PainelTokenPage() {
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       <div>
-        <h1 className="text-3xl">Consulta de Contas</h1>
+        <h1 className="text-3xl font-semibold">Consulta de Contas</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Cole a key da conta mãe para ver sub-contas com pagamentos.
         </p>
