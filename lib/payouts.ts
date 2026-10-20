@@ -1,8 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { getWhop, whopErrorMessage, type BalanceSnapshot } from "@/lib/whop";
-async function getWhopForAccount(accountId: string) {
+async function sellerKey(accountId: string) {
   const user = await prisma.user.findFirst({ where: { whopBizId: accountId }, select: { whopApiKey: true } });
-  return getWhop(user?.whopApiKey);
+  if (!user?.whopApiKey) throw new Error("Key da conta não configurada.");
+  return user.whopApiKey;
+}
+
+async function getWhopForAccount(accountId: string) {
+  return getWhop(await sellerKey(accountId));
 }
 
 
@@ -205,8 +210,8 @@ async function collectSupported(params: {
   currency?: string;
   supportedPayoutMethodId?: string;
   destinationCurrency?: string;
-}) {
-  const client = await getWhopForAccount(params.accountId);
+}, apiKey: string) {
+  const client = getWhop(apiKey);
   let page = await client.payouts.supportedMethods.list({
     account_id: params.accountId,
     country: params.country,
@@ -231,12 +236,13 @@ export async function listPayoutCatalog(params: {
   amount: number;
   currency: string;
 }): Promise<{ methods: CatalogMethod[]; setupRequired: boolean }> {
-  let items = await collectSupported(params);
+  const apiKey = await sellerKey(params.accountId);
+  let items = await collectSupported(params, apiKey);
   let setupRequired = false;
   if (items.length === 0) {
     const parentId = await platformAccountId(params.accountId).catch(() => null);
     if (parentId) {
-      items = await collectSupported({ ...params, accountId: parentId });
+      items = await collectSupported({ ...params, accountId: parentId }, apiKey);
       setupRequired = items.length > 0;
     }
   }
@@ -281,6 +287,7 @@ export async function getPayoutFields(params: {
   supportedPayoutMethodId: string;
   destinationCurrency: string;
 }): Promise<PayoutField[]> {
+  const apiKey = await sellerKey(params.accountId);
   let items: Awaited<ReturnType<typeof collectSupported>> = [];
   try {
     items = await collectSupported({
@@ -288,7 +295,7 @@ export async function getPayoutFields(params: {
       country: params.country,
       supportedPayoutMethodId: params.supportedPayoutMethodId,
       destinationCurrency: params.destinationCurrency,
-    });
+    }, apiKey);
   } catch (error) {
     if (!missingPayoutSetup(error)) throw error;
   }
@@ -300,7 +307,7 @@ export async function getPayoutFields(params: {
         country: params.country,
         supportedPayoutMethodId: params.supportedPayoutMethodId,
         destinationCurrency: params.destinationCurrency,
-      });
+      }, apiKey);
     }
   }
   const match =
@@ -517,7 +524,7 @@ function nextRelease(candidates: string[], today: string) {
  * liberação) e reserva. A data do pendente vem de pending_settlements.
  */
 export async function loadSellerTreasury(accountId: string, apiKey?: string | null): Promise<SellerTreasury> {
-  const client = getWhop(apiKey);
+  const client = getWhop(apiKey || (await sellerKey(accountId)));
   let accountStatus: string | null = null;
   let accountReason: string | null = null;
   let accountActions: { action: string }[] = [];

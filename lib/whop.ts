@@ -23,6 +23,15 @@ import {
  * Connected Account (biz_...) sob a Account API key da plataforma. A cobrança
  * nasce na conta do vendedor e a thesain26 fica com `application_fee_amount`.
  */
+async function keyFor(accountId: string, apiKey?: string | null) {
+  if (apiKey) return apiKey;
+  const user = await prisma.user.findFirst({
+    where: { whopBizId: accountId },
+    select: { whopApiKey: true },
+  });
+  return user?.whopApiKey;
+}
+
 export function getWhop(apiKey?: string | null) {
   if (!apiKey) {
     throw new Error("Key da conta não configurada.");
@@ -164,7 +173,7 @@ export async function syncOperatingStatus(
   accountId: string,
   apiKey?: string | null,
 ): Promise<"active" | "suspended"> {
-  const client = getWhop(apiKey);
+  const client = getWhop(await keyFor(accountId, apiKey));
   const account = await client.accounts.retrieve({ id: accountId });
   return account.status === "suspended" ? "suspended" : "active";
 }
@@ -346,7 +355,7 @@ export async function syncCheckoutProduct(input: {
 }) {
   const user = await prisma.user.findFirst({ where: { whopBizId: input.accountId }, select: { whopApiKey: true } });
   const apiKey = user?.whopApiKey;
-  const client = getWhop(apiKey);
+  const client = getWhop(await keyFor(input.accountId, apiKey));
   const title = input.name.trim().slice(0, 80);
   if (title.length < 2) {
     throw new Error("O nome do produto precisa ter pelo menos 2 caracteres.");
@@ -427,14 +436,14 @@ export async function requireVerifiedSeller(
   amountUsd: number,
   capUsd = 2400,
 ): Promise<void> {
-  const kyc = await syncKycStatus(accountId);
+  const kyc = await syncKycStatus(accountId, await keyFor(accountId));
   if (kyc.status === "verified") return;
   if (amountUsd <= capUsd) return; // deixa vender até US$2400 até o KYC aprovar
   throw new Error("Conclua a verificação da loja para vender acima do limite.");
 }
 
 export async function syncKycStatus(accountId: string, apiKey?: string | null): Promise<KycSnapshot> {
-  const client = getWhop(apiKey);
+  const client = getWhop(await keyFor(accountId, apiKey));
 
   try {
     const list = await client.verifications.list({ account_id: accountId });
@@ -477,7 +486,7 @@ export async function syncKycStatus(accountId: string, apiKey?: string | null): 
  * O formulário do negócio mostra só o `requested_information` aberto agora.
  */
 export async function loadVerificationDesk(accountId: string, apiKey?: string | null): Promise<VerificationDesk> {
-  const client = getWhop(apiKey);
+  const client = getWhop(await keyFor(accountId, apiKey));
   const [accountResult, verificationsResult] = await Promise.allSettled([
     client.accounts.retrieve({ id: accountId }),
     client.verifications.list({ account_id: accountId }),
@@ -590,7 +599,7 @@ export async function saveBusinessPresence(
   input: { description?: string; socialUrl?: string; taxRemittedBy?: "whop" | "self" | "none" },
   apiKey?: string | null,
 ) {
-  const client = getWhop(apiKey);
+  const client = getWhop(await keyFor(accountId, apiKey));
   const description = input.description?.trim();
   const socialUrl = input.socialUrl?.trim() ? normalizeHttpUrl(input.socialUrl) : null;
   if (input.socialUrl?.trim() && !socialUrl) {
@@ -645,7 +654,7 @@ export type BalanceSnapshot = {
 
 /** Saldo da connected account. O id pode ser o próprio biz_. */
 export async function getAccountBalance(accountId: string, apiKey?: string | null): Promise<BalanceSnapshot> {
-  const client = getWhop(apiKey);
+  const client = getWhop(await keyFor(accountId, apiKey));
   const ledger = await client.ledgerAccounts.retrieve({ id: accountId });
   const usd =
     ledger.balances.find((item) => item.currency === "usd") ?? ledger.balances[0];
@@ -663,11 +672,10 @@ export async function getAccountBalance(accountId: string, apiKey?: string | nul
  * Com escopo, vale só o que a lista pede (pendências de identidade).
  */
 export async function createElementsToken(accountId: string, scopedActions?: string[], apiKey?: string | null) {
-  const client = getWhop(apiKey);
-  const actions = scopedActions?.length ? scopedActions : ["payout:destination:read", "payout:destination:write"];
+  const client = getWhop(await keyFor(accountId, apiKey));
   const access = await client.accessTokens.create({
     account_id: accountId,
-    scoped_actions: actions,
+    ...(scopedActions?.length ? { scoped_actions: scopedActions } : {}),
   });
   if (!access.token) {
     throw new Error("A Whop não devolveu o access token.");
@@ -676,7 +684,7 @@ export async function createElementsToken(accountId: string, scopedActions?: str
 }
 
 export async function listAccountPayments(accountId: string, apiKey?: string | null) {
-  const client = getWhop(apiKey);
+  const client = getWhop(await keyFor(accountId, apiKey));
   const page = await client.payments.list({
     account_id: accountId,
     first: 50,
@@ -700,7 +708,7 @@ export type PayoutRow = {
 
 /** Histórico de saques da connected account (GET /payouts). */
 export async function listPayoutHistory(accountId: string, apiKey?: string | null): Promise<PayoutRow[]> {
-  const client = getWhop(apiKey);
+  const client = getWhop(await keyFor(accountId, apiKey));
   const page = await client.payouts.list({
     account_id: accountId,
     first: 20,
@@ -738,7 +746,7 @@ export type PayoutMethodRow = {
 
 /** Métodos de saque já salvos na Whop. O cadastro em si abre o payouts_portal. */
 export async function listPayoutMethods(accountId: string, apiKey?: string | null): Promise<PayoutMethodRow[]> {
-  const client = getWhop(apiKey);
+  const client = getWhop(await keyFor(accountId, apiKey));
   const page = await client.payouts.methods.list({
     account_id: accountId,
     first: 20,
