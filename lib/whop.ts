@@ -656,7 +656,7 @@ export async function getAccountBalance(accountId: string, apiKey?: string | nul
  * Com escopo, vale só o que a lista pede (pendências de identidade).
  */
 export async function createElementsToken(accountId: string, scopedActions?: string[], apiKey?: string | null) {
-  const client = getWhop();
+  const client = getWhop(apiKey);
   const access = await client.accessTokens.create({
     account_id: accountId,
     ...(scopedActions?.length ? { scoped_actions: scopedActions } : {}),
@@ -692,7 +692,7 @@ export type PayoutRow = {
 
 /** Histórico de saques da connected account (GET /payouts). */
 export async function listPayoutHistory(accountId: string, apiKey?: string | null): Promise<PayoutRow[]> {
-  const client = getWhop();
+  const client = getWhop(apiKey);
   const page = await client.payouts.list({
     account_id: accountId,
     first: 20,
@@ -730,7 +730,7 @@ export type PayoutMethodRow = {
 
 /** Métodos de saque já salvos na Whop. O cadastro em si abre o payouts_portal. */
 export async function listPayoutMethods(accountId: string, apiKey?: string | null): Promise<PayoutMethodRow[]> {
-  const client = getWhop();
+  const client = getWhop(apiKey);
   const page = await client.payouts.methods.list({
     account_id: accountId,
     first: 20,
