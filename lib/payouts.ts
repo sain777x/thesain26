@@ -686,7 +686,7 @@ export async function loadPlatformTreasury(): Promise<PlatformTreasury> {
     return {
       id: "platform",
       title: "Conta principal",
-      treasury: emptyTreasury("usd"),
+      treasury: emptyTreasury("usd", null),
     };
   } catch (error) {
     return {
