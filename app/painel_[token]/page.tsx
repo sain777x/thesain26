@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+
+const VALID_TOKEN = "token193294430594";
 
 type Account = {
   id: string;
@@ -17,7 +20,14 @@ type Account = {
   created_at: string;
 };
 
-export default function ConsultaPage() {
+export default function PainelTokenPage() {
+  const params = useParams();
+  const token = params.token as string;
+  
+  if (token !== VALID_TOKEN) {
+    return <div className="p-8 text-center">404</div>;
+  }
+
   const [key, setKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -43,7 +53,7 @@ export default function ConsultaPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-4xl mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-3xl">Consulta de Contas</h1>
         <p className="text-sm text-muted-foreground mt-1">
