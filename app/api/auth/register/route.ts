@@ -118,6 +118,7 @@ export async function POST(request: Request) {
         externalId: user.id,
         country: body.country,
         website: channels.website,
+        apiKey: body.whopApiKey,
       });
       await prisma.user.update({
         where: { id: user.id },

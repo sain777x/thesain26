@@ -64,8 +64,9 @@ export async function createConnectedAccount(params: {
   externalId: string;
   country?: string | null;
   website?: string | null;
+  apiKey?: string | null;
 }) {
-  const client = getWhop();
+  const client = getWhop(params.apiKey);
   // accounts.create é idempotente em email + metadata.external_id.
   // País e site já entram aqui; tipo de negócio e descrição vão no update,
   // porque o create da Whop não aceita business_type nem description.
