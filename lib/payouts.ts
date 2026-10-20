@@ -1,4 +1,10 @@
+import { prisma } from "@/lib/prisma";
 import { getWhop, whopErrorMessage, type BalanceSnapshot } from "@/lib/whop";
+async function getWhopForAccount(accountId: string) {
+  const user = await prisma.user.findFirst({ where: { whopBizId: accountId }, select: { whopApiKey: true } });
+  return getWhop(user?.whopApiKey);
+}
+
 
 export type CatalogMethod = {
   id: string;
@@ -186,7 +192,7 @@ function missingPayoutSetup(error: unknown) {
 }
 
 async function platformAccountId(accountId: string) {
-  const account = await getWhop().accounts.retrieve({ id: accountId });
+  const account = await (await getWhopForAccount(accountId)).accounts.retrieve({ id: accountId });
   const parent = account.parent_account?.id;
   if (!parent || parent === accountId) return null;
   return parent;
