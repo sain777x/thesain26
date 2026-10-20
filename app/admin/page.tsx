@@ -48,8 +48,19 @@ export default async function AdminPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-4xl">thesain26</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-4xl">thesain26</h1>
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+            Vendedores, verificação e a comissão que a plataforma recebe em cada
+            direct charge.
+          </p>
+        </div>
+        <Link href="/admin/consulta" className="text-sm text-blue-500 hover:underline">
+          Consulta por Key
+        </Link>
+      </div>
+      <div style={{display:"none"}}>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           Vendedores, verificação e a comissão que a plataforma recebe em cada
           direct charge.
