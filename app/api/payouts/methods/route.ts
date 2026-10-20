@@ -88,7 +88,7 @@ export async function DELETE(request: Request) {
     if (!owned.some((method) => method.id === id)) {
       throw new HttpError(404, "Essa carteira não está nesta conta.");
     }
-    await removePayoutMethod(id);
+    await removePayoutMethod(id, user.whopBizId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return toErrorResponse(error);

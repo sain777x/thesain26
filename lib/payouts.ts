@@ -374,9 +374,8 @@ export async function savePayoutMethod(params: {
   }
 }
 
-export async function removePayoutMethod(id: string) {
-  const method = await prisma.payoutMethod.findUnique({ where: { id }, select: { accountId: true } });
-  const client = await getWhopForAccount(method?.accountId || "");
+export async function removePayoutMethod(id: string, accountId: string) {
+  const client = await getWhopForAccount(accountId);
   await client.payouts.methods.delete({ id });
 }
 
