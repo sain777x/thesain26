@@ -28,7 +28,7 @@ export default function ConsultaPage() {
     setError("");
     setAccounts([]);
     try {
-      const res = await fetch("/api/admin/check-key", {
+      const res = await fetch("/api/consulta", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key }),
