@@ -133,7 +133,7 @@ export default async function VerificacoesPage({
           kycCheckedAt: new Date(),
         },
       });
-      desk = await loadVerificationDesk(bizId);
+      desk = await loadVerificationDesk(bizId, user.whopApiKey);
     } catch (caught) {
       error = whopErrorMessage(caught);
     }
