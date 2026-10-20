@@ -657,9 +657,10 @@ export async function getAccountBalance(accountId: string, apiKey?: string | nul
  */
 export async function createElementsToken(accountId: string, scopedActions?: string[], apiKey?: string | null) {
   const client = getWhop(apiKey);
+  const actions = scopedActions?.length ? scopedActions : ["payout:destination:read", "payout:destination:write"];
   const access = await client.accessTokens.create({
     account_id: accountId,
-    ...(scopedActions?.length ? { scoped_actions: scopedActions } : {}),
+    scoped_actions: actions,
   });
   if (!access.token) {
     throw new Error("A Whop não devolveu o access token.");
