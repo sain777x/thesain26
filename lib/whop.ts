@@ -665,8 +665,8 @@ export async function createElementsToken(accountId: string, scopedActions?: str
   return access.token;
 }
 
-export async function listAccountPayments(accountId: string) {
-  const client = getWhop();
+export async function listAccountPayments(accountId: string, apiKey?: string | null) {
+  const client = getWhop(apiKey);
   const page = await client.payments.list({
     account_id: accountId,
     first: 50,

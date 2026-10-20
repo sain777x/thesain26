@@ -8,7 +8,7 @@ import { listAccountPayments } from "@/lib/whop";
  * chegou (localhost, ou entrega atrasada).
  */
 export async function syncSellerSales(accountId: string, apiKey?: string | null) {
-  const payments = await listAccountPayments(accountId);
+  const payments = await listAccountPayments(accountId, apiKey);
   let saved = 0;
   for (const payment of payments) {
     const row = await recordPayment(payment as unknown as Record<string, unknown>);
