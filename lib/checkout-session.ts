@@ -52,7 +52,7 @@ export async function openProductCheckout(productId: string, priceId?: string | 
   let activeProductId = product.whopProductId;
   if (!activeProductId) {
     try {
-      activeProductId = await syncCheckoutProduct({ apiKey: user?.whopApiKey,
+      activeProductId = await syncCheckoutProduct({
         accountId: product.seller.whopBizId,
         name: product.name,
         subtitle: product.subtitle,
@@ -65,7 +65,7 @@ export async function openProductCheckout(productId: string, priceId?: string | 
   }
 
   if (activeProductId && !product.whopProductId) {
-    const created = await createDirectChargeCheckout({ apiKey: user?.whopApiKey,
+    const created = await createDirectChargeCheckout({
       accountId: product.seller.whopBizId,
       price: catalog.price,
       currency: catalog.currency,
@@ -118,7 +118,7 @@ export async function openProductCheckout(productId: string, priceId?: string | 
 
   if (activeProductId) {
     try {
-      await syncCheckoutProduct({ apiKey: user?.whopApiKey,
+      await syncCheckoutProduct({
         accountId: product.seller.whopBizId,
         whopProductId: activeProductId,
         name: product.name,
@@ -131,7 +131,7 @@ export async function openProductCheckout(productId: string, priceId?: string | 
   }
 
   // Reabre a sessão em cima do plan já criado (com a comissão). Não gera outro plan.
-  const checkout = await createDirectChargeCheckout({ apiKey: user?.whopApiKey,
+  const checkout = await createDirectChargeCheckout({
     accountId: product.seller.whopBizId,
     price: catalog.price,
     currency: catalog.currency,

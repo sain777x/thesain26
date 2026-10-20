@@ -51,7 +51,7 @@ export async function openSellerPlan(input: CheckoutTarget) {
   let whopProductId = input.whopProductId ?? null;
   let warning: string | null = null;
   try {
-    whopProductId = await syncCheckoutProduct({ apiKey: user.whopApiKey,
+    whopProductId = await syncCheckoutProduct({
       accountId: input.accountId,
       whopProductId,
       name: input.name,
@@ -64,7 +64,7 @@ export async function openSellerPlan(input: CheckoutTarget) {
       "A chave da Whop não pode criar o produto do checkout. Sem a permissão de produto, o link mostra o nome da empresa em vez do nome e do rótulo.";
     whopProductId = input.whopProductId ?? null;
   }
-  const checkout = await createDirectChargeCheckout({ apiKey: user.whopApiKey,
+  const checkout = await createDirectChargeCheckout({
     accountId: input.accountId,
     price: input.price,
     currency: input.currency,
