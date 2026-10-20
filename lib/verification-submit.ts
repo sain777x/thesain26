@@ -1,4 +1,11 @@
+import { prisma } from "@/lib/prisma";
 import { PROOF_FIELD_ID } from "@/lib/verification-tasks";
+
+async function getWhopForAccount(accountId: string) {
+  const user = await prisma.user.findFirst({ where: { whopBizId: accountId }, select: { whopApiKey: true } });
+  return getWhop(user?.whopApiKey);
+}
+
 import { getWhop, whopErrorMessage } from "@/lib/whop";
 
 const FILE_ID = /^file_[A-Za-z0-9]+$/;
@@ -80,7 +87,7 @@ function proofTarget(open: OpenInformation[]) {
 
 /** Lê de novo os pedidos abertos. O retrieve completa o que a lista às vezes omite. */
 export async function loadOpenInformation(accountId: string): Promise<OpenInformation[]> {
-  const client = getWhop();
+  const client = await getWhopForAccount(accountId);
   const list = await client.verifications.list({ account_id: accountId });
   const rows = await Promise.all(
     (list.data ?? []).map(async (verification) => {
@@ -137,7 +144,7 @@ export async function loadOpenInformation(accountId: string): Promise<OpenInform
  *  Usado quando a Whop só tem required_action (submit_information_request)
  *  e ainda não criou o objeto de verificação. */
 export async function ensureBusinessVerification(accountId: string): Promise<OpenInformation[]> {
-  const client = getWhop();
+  const client = await getWhopForAccount(accountId);
   const list = await client.verifications.list({ account_id: accountId });
   let business = (list.data ?? []).find((v) => v.kind === "business" && v.status !== "approved");
 
@@ -240,7 +247,7 @@ export async function uploadPrivateFile(file: {
   type: string;
   bytes: Buffer;
 }) {
-  const client = getWhop();
+  const client = await getWhopForAccount(accountId);
   const created = await client.files.create({
     filename: file.name,
     byte_size: file.bytes.length,
@@ -284,7 +291,7 @@ export async function submitVerificationAnswers(params: {
   verificationId: string;
   answers: VerificationAnswer[];
 }) {
-  const client = getWhop();
+  const client = await getWhopForAccount(accountId);
   const list = await client.verifications.list({ account_id: params.accountId });
   const listed = (list.data ?? []).find((item) => item.id === params.verificationId);
   if (!listed?.id) {

@@ -1,5 +1,11 @@
 import type { Whop } from "@whop/sdk";
 import { prisma } from "@/lib/prisma";
+
+async function getWhopForSale(saleId: string) {
+  const sale = await prisma.sale.findUnique({ where: { id: saleId }, include: { seller: true } });
+  return getWhop(sale?.seller?.whopApiKey);
+}
+
 import { getWhop, whopErrorMessage } from "@/lib/whop";
 
 type Viewer = { id: string; role: string };
