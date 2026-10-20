@@ -95,7 +95,7 @@ export async function POST(request: Request) {
             description,
             socialUrl,
             taxRemittedBy: body.taxHandling,
-          });
+          }, user.whopApiKey);
         } catch (error) {
           console.error("[thesain26] saveBusinessPresence (no RFI)", error);
           throw new HttpError(400, "Não foi possível salvar as informações do negócio.");
@@ -128,7 +128,7 @@ export async function POST(request: Request) {
         description,
         socialUrl,
         taxRemittedBy: body.taxHandling,
-      });
+      }, user.whopApiKey);
     } catch (error) {
       console.error("[thesain26] saveBusinessPresence", error);
     }

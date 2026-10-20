@@ -581,8 +581,9 @@ export async function loadVerificationDesk(accountId: string, apiKey?: string | 
 export async function saveBusinessPresence(
   accountId: string,
   input: { description?: string; socialUrl?: string; taxRemittedBy?: "whop" | "self" | "none" },
+  apiKey?: string | null,
 ) {
-  const client = getWhop();
+  const client = getWhop(apiKey);
   const description = input.description?.trim();
   const socialUrl = input.socialUrl?.trim() ? normalizeHttpUrl(input.socialUrl) : null;
   if (input.socialUrl?.trim() && !socialUrl) {
