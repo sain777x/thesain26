@@ -24,7 +24,7 @@ export default async function VendasPage({
 
   if (user.whopBizId) {
     try {
-      await syncSellerSales(user.whopBizId);
+      await syncSellerSales(user.whopBizId, user.whopApiKey);
     } catch (error) {
       syncWarning = whopErrorMessage(error);
     }

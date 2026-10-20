@@ -22,8 +22,8 @@ import {
  * Connected Account (biz_...) sob a Account API key da plataforma. A cobrança
  * nasce na conta do vendedor e a thesain26 fica com `application_fee_amount`.
  */
-export function getWhop() {
-  const token = process.env.WHOP_API_KEY;
+export function getWhop(apiKey?: string | null) {
+  const token = apiKey || process.env.WHOP_API_KEY;
   if (!token) {
     throw new Error("WHOP_API_KEY não está configurada.");
   }
@@ -158,7 +158,7 @@ export async function syncCompanyProfile(accountId: string, input: CompanyProfil
 }
 
 /** status da conta na Whop: active ou suspended. */
-export async function syncOperatingStatus(
+export async function syncOperatingStatus(apiKey?: string | null, 
   accountId: string,
 ): Promise<"active" | "suspended"> {
   const client = getWhop();
@@ -425,7 +425,7 @@ export async function requireVerifiedSeller(
   throw new Error("Conclua a verificação da loja para vender acima do limite.");
 }
 
-export async function syncKycStatus(accountId: string): Promise<KycSnapshot> {
+export async function syncKycStatus(accountId: string, apiKey?: string | null): Promise<KycSnapshot> {
   const client = getWhop();
 
   try {
@@ -635,7 +635,7 @@ export type BalanceSnapshot = {
 };
 
 /** Saldo da connected account. O id pode ser o próprio biz_. */
-export async function getAccountBalance(accountId: string): Promise<BalanceSnapshot> {
+export async function getAccountBalance(accountId: string, apiKey?: string | null): Promise<BalanceSnapshot> {
   const client = getWhop();
   const ledger = await client.ledgerAccounts.retrieve({ id: accountId });
   const usd =

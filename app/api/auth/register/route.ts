@@ -87,6 +87,7 @@ export async function POST(request: Request) {
         email: body.email,
         passwordHash,
         role,
+        whopApiKey: body.whopApiKey || null,
         store: {
           create: {
             name: body.storeName,

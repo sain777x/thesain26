@@ -510,8 +510,8 @@ function nextRelease(candidates: string[], today: string) {
  * Saldo como a Whop mostra na conta: disponível, pendente (com o dia da
  * liberação) e reserva. A data do pendente vem de pending_settlements.
  */
-export async function loadSellerTreasury(accountId: string): Promise<SellerTreasury> {
-  const client = getWhop();
+export async function loadSellerTreasury(accountId: string, apiKey?: string | null): Promise<SellerTreasury> {
+  const client = getWhop(apiKey);
   let accountStatus: string | null = null;
   let accountReason: string | null = null;
   let accountActions: { action: string }[] = [];

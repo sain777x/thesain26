@@ -20,7 +20,7 @@ export default async function SaldoPage() {
 
   if (user.whopBizId) {
     const [balanceResult, methodsResult, historyResult] = await Promise.allSettled([
-      getAccountBalance(user.whopBizId),
+      getAccountBalance(user.whopBizId, user.whopApiKey),
       listPayoutMethods(user.whopBizId),
       listPayoutHistory(user.whopBizId),
     ]);

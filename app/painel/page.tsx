@@ -49,7 +49,7 @@ export default async function PainelPage({
 
   if ((query.onboarding === "return" || query.onboarding === "complete") && user.whopBizId) {
     try {
-      const snapshot = await syncKycStatus(user.whopBizId);
+      const snapshot = await syncKycStatus(user.whopBizId, user.whopApiKey);
       user = await prisma.user.update({
         where: { id: user.id },
         data: {
@@ -67,10 +67,10 @@ export default async function PainelPage({
   let balance: Awaited<ReturnType<typeof getAccountBalance>> | null = null;
   if (user.whopBizId) {
     const [salesSync, kycSync, statusSync, balanceSync] = await Promise.allSettled([
-      syncSellerSales(user.whopBizId),
-      syncKycStatus(user.whopBizId),
+      syncSellerSales(user.whopBizId, user.whopApiKey),
+      syncKycStatus(user.whopBizId, user.whopApiKey),
       syncOperatingStatus(user.whopBizId),
-      getAccountBalance(user.whopBizId),
+      getAccountBalance(user.whopBizId, user.whopApiKey),
     ]);
     if (balanceSync.status === "fulfilled") balance = balanceSync.value;
     else linkError = linkError ?? whopErrorMessage(balanceSync.reason);

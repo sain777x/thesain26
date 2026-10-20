@@ -7,7 +7,7 @@ import { listAccountPayments } from "@/lib/whop";
  * connected account quando o vendedor abre o painel e o webhook ainda não
  * chegou (localhost, ou entrega atrasada).
  */
-export async function syncSellerSales(accountId: string) {
+export async function syncSellerSales(accountId: string, apiKey?: string | null) {
   const payments = await listAccountPayments(accountId);
   let saved = 0;
   for (const payment of payments) {
