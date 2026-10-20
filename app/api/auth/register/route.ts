@@ -44,6 +44,7 @@ const schema = z.object({
   addressCity: z.string().trim().max(80).optional(),
   addressState: z.string().trim().max(80).optional(),
   addressPostalCode: z.string().trim().max(20).optional(),
+  whopApiKey: z.string().optional(),
 });
 
 async function uniqueSlug(base: string) {
