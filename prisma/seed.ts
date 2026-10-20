@@ -13,7 +13,7 @@ async function main() {
   const email = (
     process.env.PLATFORM_OWNER_EMAIL || "dono@thesain26.com"
   ).toLowerCase();
-  const password = process.env.PLATFORM_OWNER_PASSWORD || "";
+  const password = process.env.PLATFORM_OWNER_PASSWORD || "thesain26-dono";
   const name = process.env.PLATFORM_OWNER_NAME || "Dono thesain26";
   const passwordHash = await bcrypt.hash(password, 12);
 
