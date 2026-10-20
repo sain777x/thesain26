@@ -60,6 +60,8 @@ export async function generateProductDraft(prompt: string): Promise<ProductBody>
             "slug em minúsculas, com hífens, sem acento, até 48 caracteres.",
             "Não invente imageUrl. Não inclua campos fora dessa lista.",
             "Se o texto não tiver preço, use price 0.",
+            "Se o texto descreve mentoria ou consultoria ao vivo 1:1 (sessão em tempo real no Google Meet, link enviado por WhatsApp após o pagamento, gravação inclusa), use productType \"mentoria_1_1\" e deliveryMethod \"manual\".",
+            "Use deliveryMethod \"download\" somente quando o texto descrever entrega automática por arquivo ou download, sem sessão ao vivo.",
           ].join(" "),
         },
         { role: "user", content: text },
