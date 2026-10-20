@@ -339,7 +339,7 @@ export async function syncCheckoutProduct(input: {
   subtitle?: string;
   description?: string;
 }) {
-  const client = getWhop();
+  const client = getWhop(input.apiKey);
   const title = input.name.trim().slice(0, 80);
   if (title.length < 2) {
     throw new Error("O nome do produto precisa ter pelo menos 2 caracteres.");
