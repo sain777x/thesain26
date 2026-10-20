@@ -133,13 +133,15 @@ export async function POST(request: Request) {
       console.error("[thesain26] saveBusinessPresence", error);
     }
 
-    const touched = new Set(assigned.groups.map((group) => group.verificationId));
+    const answeredIds = new Set(
+      assigned.groups.flatMap((group) => group.answers.map((answer) => answer.id)),
+    );
     const after = await loadOpenInformation(user.whopBizId);
-    const stillOpen = after.filter((item) => touched.has(item.verificationId));
+    const stillOpen = after.filter((item) => item.id !== PROOF_FIELD_ID && !answeredIds.has(item.id));
     if (stillOpen.length > 0) {
       throw new HttpError(
         409,
-        `A Whop ainda está pedindo: ${stillOpen.map((item) => item.label).join(" · ")}. Responda só o que continua na tela.`,
+        `A Whop ainda está pedindo: ${stillOpen.map((item) => item.label).join(" · ")}. Envie só esses campos.`,
       );
     }
     return NextResponse.json({ ok: true, answered: true });

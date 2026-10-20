@@ -571,10 +571,7 @@ export function buildVerificationDesk(input: {
         "A Whop pediu informações atualizadas do negócio. Preencha no formulário abaixo, já autenticado — sem login no painel da Whop. Os saques voltam depois da análise (geralmente menos de 24h). As vendas continuam.",
       category: "extra",
       status: review.status === "pending" ? "pending" : "required",
-      details: [
-        "O formulário oficial abre nesta página (descrição, rede social e as provas).",
-        "Ao terminar, clique em Atualizar.",
-      ],
+      details: ["Responda só os campos que a Whop devolveu nesta leitura."],
       blocked: review.blocked,
       resolve: reviewUrl
         ? { kind: "url", url: reviewUrl, embed: false, label: "Responder na Whop" }

@@ -59,6 +59,7 @@ export type OpenInformation = {
   type: string;
   responseType?: string | null;
   supportingFilesRequired?: boolean;
+  errors?: string[];
 };
 
 function isProofItem(item: { requirement: string; label: string; type: string; field?: string | null }) {
@@ -108,7 +109,11 @@ export async function loadOpenInformation(accountId: string): Promise<OpenInform
   for (const verification of rows) {
     if (!verification.id || verification.status === "approved") continue;
     for (const item of verification.requested_information ?? []) {
-      const raw = item as typeof item & { field?: string | null };
+      const raw = item as typeof item & { field?: string | null; error_message?: string | null };
+      const reasons = (item.errors ?? [])
+        .map((error) => error.reason || error.code || "")
+        .filter(Boolean);
+      if (reasons.length === 0 && raw.error_message?.trim()) reasons.push(raw.error_message.trim());
       items.push({
         verificationId: verification.id,
         id: item.id,
@@ -117,6 +122,7 @@ export async function loadOpenInformation(accountId: string): Promise<OpenInform
         type: item.type,
         responseType: item.response_type,
         supportingFilesRequired: item.supporting_files_required,
+        errors: reasons,
       });
     }
   }
@@ -172,7 +178,11 @@ export async function ensureBusinessVerification(accountId: string): Promise<Ope
 
   const items: OpenInformation[] = [];
   for (const item of full.requested_information ?? []) {
-    const raw = item as typeof item & { field?: string | null };
+    const raw = item as typeof item & { field?: string | null; error_message?: string | null };
+    const reasons = (item.errors ?? [])
+      .map((error) => error.reason || error.code || "")
+      .filter(Boolean);
+    if (reasons.length === 0 && raw.error_message?.trim()) reasons.push(raw.error_message.trim());
     items.push({
       verificationId: full.id!,
       id: item.id,
@@ -181,6 +191,7 @@ export async function ensureBusinessVerification(accountId: string): Promise<Ope
       type: item.type,
       responseType: item.response_type,
       supportingFilesRequired: item.supporting_files_required,
+      errors: reasons,
     });
   }
   return items;

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BusinessInfoForm } from "@/components/business-info-form";
 import { VerificationForm } from "@/components/verification-form";
 import { ReloadAction } from "@/components/reload-action";
 import { appUrl } from "@/lib/app-url";
@@ -18,12 +17,14 @@ import {
   isDescriptionRequest,
   isSocialRequest,
   isUploadField,
+  normalizeInformationType,
   taskStatusLabel,
   type IdentityLane,
   type InformationField,
   type VerificationDesk,
   type VerificationTask,
 } from "@/lib/verification-tasks";
+import { loadOpenInformation } from "@/lib/verification-submit";
 import { cn } from "cn";
 
 export const dynamic = "force-dynamic";
@@ -161,6 +162,31 @@ export default async function VerificacoesPage({
 
   const businessTasks = desk?.businessReview.tasks ?? [];
   const formTasks = businessTasks.filter((task) => task.resolve.kind === "form");
+  const liveFields: InformationField[] = [];
+  let liveVerificationId = "";
+  if (bizId && showBusiness && formTasks.length === 0) {
+    try {
+      const open = await loadOpenInformation(bizId);
+      for (const item of open) {
+        if (!item.id) continue;
+        if (!liveVerificationId) liveVerificationId = item.verificationId;
+        liveFields.push({
+          id: item.id,
+          label: item.label,
+          requirement: item.requirement,
+          type: normalizeInformationType({
+            type: item.type,
+            requirement: item.requirement,
+            supportingFilesRequired: item.supportingFilesRequired,
+          }),
+          responseType: item.responseType,
+          errors: item.errors,
+        });
+      }
+    } catch (caught) {
+      error = error ?? whopErrorMessage(caught);
+    }
+  }
   const businessSessions = new Map<string, string>();
   if (showBusiness && desk && bizId && !desk.businessReview.pendingReview) {
     for (const task of businessTasks) {
@@ -299,23 +325,17 @@ export default async function VerificacoesPage({
                     ) : null}
                     {task.id === "business-review-rfi" && bizId ? (
                       <div className="space-y-4">
-                        <BusinessInfoForm
-                          initialDescription={desk.businessReview.profile.description}
-                          initialSocial={desk.businessReview.profile.socialUrl}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Se o formulário acima não limpar a pendência, use o botão abaixo para abrir o fluxo oficial (pode pedir login).
-                        </p>
-                        {task.resolve.kind === "url" && task.resolve.url ? (
-                          <a
-                            href={task.resolve.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-block text-sm text-primary underline"
-                          >
-                            Abrir formulário oficial da Whop
-                          </a>
-                        ) : null}
+                        {liveFields.length > 0 ? (
+                          <VerificationForm
+                            verificationId={liveVerificationId}
+                            fields={[...liveFields].sort((left, right) => answerOrder(left) - answerOrder(right))}
+                            label="Enviar para a Whop"
+                          />
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            A Whop ainda não devolveu os campos deste pedido. Clique em Atualizar.
+                          </p>
+                        )}
                       </div>
                     ) : task.resolve.kind === "form" ? (
                       <VerificationForm
