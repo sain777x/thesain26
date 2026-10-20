@@ -124,7 +124,7 @@ export default async function VerificacoesPage({
 
   if (bizId) {
     try {
-      const snapshot = await syncKycStatus(bizId);
+      const snapshot = await syncKycStatus(bizId, user.whopApiKey);
       await prisma.user.update({
         where: { id: user.id },
         data: {
