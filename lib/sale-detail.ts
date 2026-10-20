@@ -204,7 +204,7 @@ export async function loadSaleDetail(saleId: string, viewer: Viewer): Promise<Sa
 
   let payment: Whop.Payment | null = null;
   try {
-    payment = await getWhop().payments.retrieve({ id: sale.whopPaymentId });
+    payment = await getWhop(sale.seller?.whopApiKey).payments.retrieve({ id: sale.whopPaymentId });
   } catch (error) {
     base.whopError = whopErrorMessage(error);
     return base;
@@ -229,7 +229,7 @@ export async function loadSaleDetail(saleId: string, viewer: Viewer): Promise<Sa
 
   let refunds: Whop.Refund[] = [];
   try {
-    const page = await getWhop().refunds.list({ payment_id: sale.whopPaymentId, first: 20 });
+    const page = await getWhop(sale.seller?.whopApiKey).refunds.list({ payment_id: sale.whopPaymentId, first: 20 });
     refunds = page.data;
     for (const refund of refunds) {
       pushEvent(events, refund.created_at, `Reembolso ${refund.status}`);
@@ -337,11 +337,11 @@ export async function refundOwnedSale(saleId: string, viewer: Viewer) {
   if (!sale || (viewer.role !== "owner" && sale.sellerId !== viewer.id)) {
     return { error: "Venda não encontrada.", status: 404 as const };
   }
-  const payment = await getWhop().payments.retrieve({ id: sale.whopPaymentId });
+  const payment = await getWhop(sale.seller?.whopApiKey).payments.retrieve({ id: sale.whopPaymentId });
   if (!payment.refundable) {
     return { error: "Este pagamento não pode ser reembolsado.", status: 400 as const };
   }
-  await getWhop().payments.refund(
+  await getWhop(sale.seller?.whopApiKey).payments.refund(
     { id: sale.whopPaymentId },
     { idempotencyKey: `refund-${sale.whopPaymentId}` },
   );
