@@ -158,7 +158,7 @@ export async function syncCompanyProfile(accountId: string, input: CompanyProfil
 }
 
 /** status da conta na Whop: active ou suspended. */
-export async function syncOperatingStatus(apiKey?: string | null, 
+export async function syncOperatingStatus(
   accountId: string,
 ): Promise<"active" | "suspended"> {
   const client = getWhop();
