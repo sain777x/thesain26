@@ -206,7 +206,7 @@ async function collectSupported(params: {
   supportedPayoutMethodId?: string;
   destinationCurrency?: string;
 }) {
-  const client = getWhop();
+  const client = await getWhopForAccount(params.accountId);
   let page = await client.payouts.supportedMethods.list({
     account_id: params.accountId,
     country: params.country,
@@ -350,7 +350,7 @@ export async function savePayoutMethod(params: {
   fields: Record<string, string>;
   isDefault: boolean;
 }) {
-  const client = getWhop();
+  const client = await getWhopForAccount(params.accountId);
   try {
     const created = await client.payouts.methods.create(
       {
@@ -375,7 +375,7 @@ export async function savePayoutMethod(params: {
 }
 
 export async function removePayoutMethod(id: string) {
-  const client = getWhop();
+  const client = await getWhopForAccount(params.accountId);
   await client.payouts.methods.delete({ id });
 }
 
@@ -385,7 +385,7 @@ export async function quotePayout(params: {
   amount: number;
   currency: string;
 }): Promise<PayoutQuoteView> {
-  const client = getWhop();
+  const client = await getWhopForAccount(params.accountId);
   const quote = await client.payouts.createQuote(
     {
       account_id: params.accountId,
@@ -418,7 +418,7 @@ export async function sendPayout(params: {
   acknowledgeBankWarning?: boolean;
 }) {
   const quote = await quotePayout(params);
-  const client = getWhop();
+  const client = await getWhopForAccount(params.accountId);
   const payout = await client.payouts.create(
     {
       account_id: params.accountId,
@@ -683,7 +683,7 @@ export async function loadSellerTreasury(accountId: string, apiKey?: string | nu
 /** Conta Whop da plataforma, onde caem as comissões dos vendedores. */
 export async function loadPlatformTreasury(): Promise<PlatformTreasury> {
   try {
-    const client = getWhop();
+    const client = await getWhopForAccount(params.accountId);
     const me = await client.accounts.me();
     const id = me.parent_account?.id && me.parent_account.id !== me.id ? me.parent_account.id : me.id;
     const account = id === me.id ? me : await client.accounts.retrieve({ id });
