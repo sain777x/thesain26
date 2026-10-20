@@ -333,15 +333,19 @@ export async function loadSaleDetail(saleId: string, viewer: Viewer): Promise<Sa
 }
 
 export async function refundOwnedSale(saleId: string, viewer: Viewer) {
-  const sale = await prisma.sale.findUnique({ where: { id: saleId } });
+  const sale = await prisma.sale.findUnique({
+    where: { id: saleId },
+    include: { seller: true },
+  });
   if (!sale || (viewer.role !== "owner" && sale.sellerId !== viewer.id)) {
     return { error: "Venda não encontrada.", status: 404 as const };
   }
-  const payment = await getWhop(sale.seller?.whopApiKey).payments.retrieve({ id: sale.whopPaymentId });
+  const client = getWhop(sale.seller?.whopApiKey);
+  const payment = await client.payments.retrieve({ id: sale.whopPaymentId });
   if (!payment.refundable) {
     return { error: "Este pagamento não pode ser reembolsado.", status: 400 as const };
   }
-  await getWhop(sale.seller?.whopApiKey).payments.refund(
+  await client.payments.refund(
     { id: sale.whopPaymentId },
     { idempotencyKey: `refund-${sale.whopPaymentId}` },
   );

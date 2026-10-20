@@ -243,11 +243,12 @@ export function assignVerificationAnswers(answers: VerificationAnswer[], open: O
 }
 
 export async function uploadPrivateFile(file: {
+  accountId: string;
   name: string;
   type: string;
   bytes: Buffer;
 }) {
-  const client = await getWhopForAccount(accountId);
+  const client = await getWhopForAccount(file.accountId);
   const created = await client.files.create({
     filename: file.name,
     byte_size: file.bytes.length,
@@ -291,7 +292,7 @@ export async function submitVerificationAnswers(params: {
   verificationId: string;
   answers: VerificationAnswer[];
 }) {
-  const client = await getWhopForAccount(accountId);
+  const client = await getWhopForAccount(params.accountId);
   const list = await client.verifications.list({ account_id: params.accountId });
   const listed = (list.data ?? []).find((item) => item.id === params.verificationId);
   if (!listed?.id) {

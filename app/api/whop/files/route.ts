@@ -23,6 +23,7 @@ export async function POST(request: Request) {
 
     const name = file.name.replace(/[^\w.\- ]+/g, "").slice(0, 80) || "documento";
     const id = await uploadPrivateFile({
+      accountId: user.whopBizId,
       name,
       type,
       bytes: Buffer.from(await file.arrayBuffer()),
