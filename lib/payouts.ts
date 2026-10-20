@@ -375,7 +375,8 @@ export async function savePayoutMethod(params: {
 }
 
 export async function removePayoutMethod(id: string) {
-  const client = await getWhopForAccount(params.accountId);
+  const method = await prisma.payoutMethod.findUnique({ where: { id }, select: { accountId: true } });
+  const client = await getWhopForAccount(method?.accountId || "");
   await client.payouts.methods.delete({ id });
 }
 
@@ -683,7 +684,7 @@ export async function loadSellerTreasury(accountId: string, apiKey?: string | nu
 /** Conta Whop da plataforma, onde caem as comissões dos vendedores. */
 export async function loadPlatformTreasury(): Promise<PlatformTreasury> {
   try {
-    const client = await getWhopForAccount(params.accountId);
+    const client = getWhop("platform");
     const me = await client.accounts.me();
     const id = me.parent_account?.id && me.parent_account.id !== me.id ? me.parent_account.id : me.id;
     const account = id === me.id ? me : await client.accounts.retrieve({ id });
