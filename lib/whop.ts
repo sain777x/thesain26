@@ -278,7 +278,8 @@ export type DirectChargeResult = {
 export async function createDirectChargeCheckout(
   input: DirectChargeInput,
 ): Promise<DirectChargeResult> {
-  const client = getWhop();
+  const user = await prisma.user.findFirst({ where: { whopBizId: input.accountId }, select: { whopApiKey: true } });
+  const client = getWhop(user?.whopApiKey);
   const fee = applicationFeeAmount(input.price, input.feePercent);
   const redirect =
     input.redirectUrl && input.redirectUrl.startsWith("https://")
