@@ -17,6 +17,7 @@ model User {
   name               String
   role               String    @default("seller")
   whopBizId          String?   @unique
+  whopApiKey         String?
   kycStatus          String    @default("not_started")
   kycDetail          String?
   kycCheckedAt       DateTime?
