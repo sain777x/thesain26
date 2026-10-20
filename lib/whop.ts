@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/prisma";
 import { WhopClient, type Whop } from "@whop/sdk";
 import {
   buildSocialLinks,
@@ -337,8 +338,9 @@ export async function syncCheckoutProduct(input: {
   name: string;
   subtitle?: string;
   description?: string;
-  apiKey?: string | null;
 }) {
+  const user = await prisma.user.findFirst({ where: { whopBizId: input.accountId }, select: { whopApiKey: true } });
+  const apiKey = user?.whopApiKey;
   const client = getWhop(input.apiKey);
   const title = input.name.trim().slice(0, 80);
   if (title.length < 2) {
