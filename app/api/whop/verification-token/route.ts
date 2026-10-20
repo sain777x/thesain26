@@ -14,7 +14,7 @@ export async function GET() {
     }
     // Token sem escopo restrito para o RfiElement conseguir ver e responder
     // tanto KYC quanto o business information request.
-    const token = await createElementsToken(user.whopBizId);
+    const token = await createElementsToken(user.whopBizId, undefined, user.whopApiKey);
     return NextResponse.json(
       { token },
       { headers: { "Cache-Control": "no-store" } },

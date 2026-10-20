@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     if (!payoutMethodId.startsWith("potk_") || amount == null) {
       throw new HttpError(400, "Informe a carteira e um valor válido.");
     }
-    const owned = await listPayoutMethods(user.whopBizId);
+    const owned = await listPayoutMethods(user.whopBizId, user.whopApiKey);
     const method = owned.find((item) => item.id === payoutMethodId);
     if (!method) throw new HttpError(404, "Essa carteira não está nesta conta.");
     if (method.status === "broken") {

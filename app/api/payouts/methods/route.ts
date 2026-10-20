@@ -45,7 +45,7 @@ export async function POST(request: Request) {
       if (typeof value === "string") values[key] = value;
     }
     const fields = validatePayoutFields(schema, values);
-    const existing = await listPayoutMethods(user.whopBizId);
+    const existing = await listPayoutMethods(user.whopBizId, user.whopApiKey);
     const id = await savePayoutMethod({
       accountId: user.whopBizId,
       supportedPayoutMethodId,
@@ -84,7 +84,7 @@ export async function DELETE(request: Request) {
     if (!id.startsWith("potk_")) {
       throw new HttpError(400, "Carteira inválida.");
     }
-    const owned = await listPayoutMethods(user.whopBizId);
+    const owned = await listPayoutMethods(user.whopBizId, user.whopApiKey);
     if (!owned.some((method) => method.id === id)) {
       throw new HttpError(404, "Essa carteira não está nesta conta.");
     }

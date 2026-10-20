@@ -12,7 +12,7 @@ export async function GET() {
     if (!user.whopBizId) {
       throw new HttpError(400, "Connected account ainda não configurada.");
     }
-    const token = await createElementsToken(user.whopBizId);
+    const token = await createElementsToken(user.whopBizId, undefined, user.whopApiKey);
     return NextResponse.json({ token, accountId: user.whopBizId });
   } catch (error) {
     return toErrorResponse(error);

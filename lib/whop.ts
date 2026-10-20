@@ -655,8 +655,8 @@ export async function getAccountBalance(accountId: string, apiKey?: string | nul
  * Sem escopo, herda a chave da plataforma (carteira).
  * Com escopo, vale só o que a lista pede (pendências de identidade).
  */
-export async function createElementsToken(accountId: string, scopedActions?: string[]) {
-  const client = getWhop();
+export async function createElementsToken(accountId: string, scopedActions?: string[], apiKey?: string | null) {
+  const client = getWhop(apiKey);
   const access = await client.accessTokens.create({
     account_id: accountId,
     ...(scopedActions?.length ? { scoped_actions: scopedActions } : {}),
