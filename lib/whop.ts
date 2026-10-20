@@ -23,11 +23,10 @@ import {
  * nasce na conta do vendedor e a thesain26 fica com `application_fee_amount`.
  */
 export function getWhop(apiKey?: string | null) {
-  const token = apiKey || process.env.WHOP_API_KEY;
-  if (!token) {
-    throw new Error("WHOP_API_KEY não está configurada.");
+  if (!apiKey) {
+    throw new Error("Key da conta não configurada.");
   }
-  return new WhopClient({ token });
+  return new WhopClient({ token: apiKey });
 }
 
 export function whopErrorMessage(error: unknown) {
