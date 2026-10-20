@@ -19,6 +19,7 @@ export type InformationField = {
   detailsLabel?: string | null;
   actionUrl?: string | null;
   errors?: string[];
+  defaultValue?: string;
 };
 
 export type VerificationTask = {

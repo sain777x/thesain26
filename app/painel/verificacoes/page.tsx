@@ -162,6 +162,15 @@ export default async function VerificacoesPage({
 
   const businessTasks = desk?.businessReview.tasks ?? [];
   const formTasks = businessTasks.filter((task) => task.resolve.kind === "form");
+  const savedProfile = {
+    description: user.store?.description?.trim() || desk?.businessReview.profile.description || "",
+    socialUrl:
+      user.store?.socialUrl?.trim() ||
+      user.store?.instagram?.trim() ||
+      user.store?.website?.trim() ||
+      desk?.businessReview.profile.socialUrl ||
+      "",
+  };
   const liveFields: InformationField[] = [];
   let liveVerificationId = "";
   if (bizId && showBusiness && formTasks.length === 0) {
@@ -328,7 +337,10 @@ export default async function VerificacoesPage({
                         {liveFields.length > 0 ? (
                           <VerificationForm
                             verificationId={liveVerificationId}
-                            fields={[...liveFields].sort((left, right) => answerOrder(left) - answerOrder(right))}
+                            fields={withSavedAnswers(
+                              [...liveFields].sort((left, right) => answerOrder(left) - answerOrder(right)),
+                              savedProfile,
+                            )}
                             label="Enviar para a Whop"
                           />
                         ) : (
@@ -340,8 +352,9 @@ export default async function VerificacoesPage({
                     ) : task.resolve.kind === "form" ? (
                       <VerificationForm
                         verificationId={task.resolve.verificationId}
-                        fields={[...task.resolve.fields].sort(
-                          (left, right) => answerOrder(left) - answerOrder(right),
+                        fields={withSavedAnswers(
+                          [...task.resolve.fields].sort((left, right) => answerOrder(left) - answerOrder(right)),
+                          savedProfile,
                         )}
                         label={task.resolve.label}
                       />
@@ -383,7 +396,7 @@ export default async function VerificacoesPage({
                     <VerificationForm
                       key={task.id}
                       verificationId={task.resolve.verificationId}
-                      fields={task.resolve.fields}
+                      fields={withSavedAnswers(task.resolve.fields, savedProfile)}
                       label={task.resolve.label}
                     />
                   ) : null,
@@ -450,6 +463,25 @@ function IdentityChoice({ lane, active }: { lane: IdentityLane; active: boolean 
       <span className="mt-1 block text-xs opacity-80">{statusLabel(lane.status)}</span>
     </Link>
   );
+}
+
+function savedAnswer(field: InformationField, saved: { description: string; socialUrl: string }) {
+  const text = `${field.requirement} ${field.label}`.toLowerCase();
+  if (isSocialRequest(field) || field.type === "url" || field.responseType === "url") {
+    return saved.socialUrl;
+  }
+  if (isDescriptionRequest(field) || field.requirement === "business_description") {
+    return saved.description;
+  }
+  if (/social|website|perfil|rede/.test(text)) return saved.socialUrl;
+  return "";
+}
+
+function withSavedAnswers(fields: InformationField[], saved: { description: string; socialUrl: string }) {
+  return fields.map((field) => ({
+    ...field,
+    defaultValue: field.defaultValue || savedAnswer(field, saved) || undefined,
+  }));
 }
 
 function answerOrder(field: InformationField) {

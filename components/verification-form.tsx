@@ -414,8 +414,8 @@ function TaxChoice({
   );
 }
 
-function CountedText({ name, required }: { name: string; required: boolean }) {
-  const [value, setValue] = useState("");
+function CountedText({ name, required, initial = "" }: { name: string; required: boolean; initial?: string }) {
+  const [value, setValue] = useState(initial);
   const count = value.trim().length;
   return (
     <div className="space-y-2">
@@ -622,7 +622,7 @@ function FieldControl({
       <Input
         id={field.id}
         name={field.id}
-        defaultValue=""
+        defaultValue={field.defaultValue || ""}
         required={!field.optional}
         placeholder="https://instagram.com/sua-loja ou https://seusite.com"
       />
@@ -636,14 +636,14 @@ function FieldControl({
     (field.type === "text" && field.label.length > 40)
   ) {
     if (field.requirement === "business_description") {
-      return <CountedText name={field.id} required={!field.optional} />;
+      return <CountedText name={field.id} required={!field.optional} initial={field.defaultValue || ""} />;
     }
-    return <Textarea id={field.id} name={field.id} required={!field.optional} />;
+    return <Textarea id={field.id} name={field.id} required={!field.optional} defaultValue={field.defaultValue || ""} />;
   }
 
   return (
     <div className="space-y-2">
-      <Input id={field.id} name={field.id} required={!field.optional && field.type !== "text_with_files"} />
+      <Input id={field.id} name={field.id} defaultValue={field.defaultValue || ""} required={!field.optional && field.type !== "text_with_files"} />
       {field.type === "text_with_files" ? <FileStack files={files} onChange={onFiles} /> : null}
     </div>
   );
