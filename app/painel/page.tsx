@@ -69,7 +69,7 @@ export default async function PainelPage({
     const [salesSync, kycSync, statusSync, balanceSync] = await Promise.allSettled([
       syncSellerSales(user.whopBizId, user.whopApiKey),
       syncKycStatus(user.whopBizId, user.whopApiKey),
-      syncOperatingStatus(user.whopBizId),
+      syncOperatingStatus(user.whopBizId, user.whopApiKey),
       getAccountBalance(user.whopBizId, user.whopApiKey),
     ]);
     if (balanceSync.status === "fulfilled") balance = balanceSync.value;

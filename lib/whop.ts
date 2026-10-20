@@ -160,8 +160,9 @@ export async function syncCompanyProfile(accountId: string, input: CompanyProfil
 /** status da conta na Whop: active ou suspended. */
 export async function syncOperatingStatus(
   accountId: string,
+  apiKey?: string | null,
 ): Promise<"active" | "suspended"> {
-  const client = getWhop();
+  const client = getWhop(apiKey);
   const account = await client.accounts.retrieve({ id: accountId });
   return account.status === "suspended" ? "suspended" : "active";
 }
@@ -468,8 +469,8 @@ export async function syncKycStatus(accountId: string, apiKey?: string | null): 
  * Painel de verificações: análise do negócio e identidade abrem separadas.
  * O formulário do negócio mostra só o `requested_information` aberto agora.
  */
-export async function loadVerificationDesk(accountId: string): Promise<VerificationDesk> {
-  const client = getWhop();
+export async function loadVerificationDesk(accountId: string, apiKey?: string | null): Promise<VerificationDesk> {
+  const client = getWhop(apiKey);
   const [accountResult, verificationsResult] = await Promise.allSettled([
     client.accounts.retrieve({ id: accountId }),
     client.verifications.list({ account_id: accountId }),
@@ -689,8 +690,8 @@ export type PayoutRow = {
 };
 
 /** Histórico de saques da connected account (GET /payouts). */
-export async function listPayoutHistory(accountId: string): Promise<PayoutRow[]> {
-  const client = getWhop();
+export async function listPayoutHistory(accountId: string, apiKey?: string | null): Promise<PayoutRow[]> {
+  const client = getWhop(apiKey);
   const page = await client.payouts.list({
     account_id: accountId,
     first: 20,
@@ -727,8 +728,8 @@ export type PayoutMethodRow = {
 };
 
 /** Métodos de saque já salvos na Whop. O cadastro em si abre o payouts_portal. */
-export async function listPayoutMethods(accountId: string): Promise<PayoutMethodRow[]> {
-  const client = getWhop();
+export async function listPayoutMethods(accountId: string, apiKey?: string | null): Promise<PayoutMethodRow[]> {
+  const client = getWhop(apiKey);
   const page = await client.payouts.methods.list({
     account_id: accountId,
     first: 20,

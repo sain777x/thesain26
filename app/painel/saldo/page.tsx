@@ -21,8 +21,8 @@ export default async function SaldoPage() {
   if (user.whopBizId) {
     const [balanceResult, methodsResult, historyResult] = await Promise.allSettled([
       getAccountBalance(user.whopBizId, user.whopApiKey),
-      listPayoutMethods(user.whopBizId),
-      listPayoutHistory(user.whopBizId),
+      listPayoutMethods(user.whopBizId, user.whopApiKey),
+      listPayoutHistory(user.whopBizId, user.whopApiKey),
     ]);
     if (balanceResult.status === "fulfilled") balance = balanceResult.value;
     else balanceError = whopErrorMessage(balanceResult.reason);
