@@ -426,7 +426,7 @@ export async function requireVerifiedSeller(
 }
 
 export async function syncKycStatus(accountId: string, apiKey?: string | null): Promise<KycSnapshot> {
-  const client = getWhop();
+  const client = getWhop(apiKey);
 
   try {
     const list = await client.verifications.list({ account_id: accountId });
@@ -636,7 +636,7 @@ export type BalanceSnapshot = {
 
 /** Saldo da connected account. O id pode ser o próprio biz_. */
 export async function getAccountBalance(accountId: string, apiKey?: string | null): Promise<BalanceSnapshot> {
-  const client = getWhop();
+  const client = getWhop(apiKey);
   const ledger = await client.ledgerAccounts.retrieve({ id: accountId });
   const usd =
     ledger.balances.find((item) => item.currency === "usd") ?? ledger.balances[0];
