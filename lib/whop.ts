@@ -337,6 +337,7 @@ export async function syncCheckoutProduct(input: {
   name: string;
   subtitle?: string;
   description?: string;
+  apiKey?: string | null;
 }) {
   const client = getWhop(input.apiKey);
   const title = input.name.trim().slice(0, 80);

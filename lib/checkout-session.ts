@@ -52,7 +52,7 @@ export async function openProductCheckout(productId: string, priceId?: string | 
   let activeProductId = product.whopProductId;
   if (!activeProductId) {
     try {
-      activeProductId = await syncCheckoutProduct({ apiKey: user?.whopApiKey, apiKey: user?.whopApiKey,
+      activeProductId = await syncCheckoutProduct({ apiKey: user?.whopApiKey,
         accountId: product.seller.whopBizId,
         name: product.name,
         subtitle: product.subtitle,
