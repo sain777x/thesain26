@@ -30,58 +30,13 @@ export async function generateProductDraft(prompt: string): Promise<ProductBody>
     throw new Error("A chave da IA não está configurada. Defina XAI_API_KEY.");
   }
   const text = draftProductFromPrompt(prompt);
-  const model = process.env.XAI_MODEL || "grok-3-mini";
-  const response = await fetch(process.env.XAI_URL || "https://api.x.ai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: [
-            "Você monta um produto digital para a thesain26 a partir de um texto livre.",
-            "Responda apenas com um objeto JSON.",
-            "Campos: name, subtitle, description, productType, deliveryMethod, price, currency, slug, status, prices.",
-            `productType: ${[...productTypes].join(", ")}.`,
-            `deliveryMethod: ${[...deliveries].join(", ")}.`,
-            `currency: ${[...currencies].join(", ")}.`,
-            "status: active ou draft. Use active, salvo se o texto pedir rascunho.",
-            "O preço tem de ser exatamente o número escrito no texto. Não arredonde e não invente outro valor.",
-            "R$, real ou reais = brl. US$, USD ou dólar = usd. € ou euro = eur. Se a moeda não aparecer, use usd.",
-            "Se houver mais de um preço, o principal vai em price e os demais em prices, cada um com label e amount.",
-            "prices tem no máximo 5 itens. Não repita o preço principal.",
-            "name até 80 caracteres. subtitle até 80. description é o texto de venda, no mesmo idioma do prompt, com 3 parágrafos e entre 900 e 1600 caracteres.",
-            "O primeiro parágrafo diz o que a sessão ao vivo cobre. O segundo descreve o que acontece na call e o que o comprador sai sabendo fazer. O terceiro explica a entrega: pagamento único, link do Google Meet por WhatsApp depois do pagamento, gravação da sessão, suporte só durante a call, sem promessa de renda.",
-            "Não escreva uma descrição de uma frase só.",
-            "slug em minúsculas, com hífens, sem acento, até 48 caracteres.",
-            "Não invente imageUrl. Não inclua campos fora dessa lista.",
-            "Se o texto não tiver preço, use price 0.",
-            "Se o texto descreve mentoria ou consultoria ao vivo 1:1 (sessão em tempo real no Google Meet, link enviado por WhatsApp após o pagamento, gravação inclusa), use productType \"mentoria_1_1\" e deliveryMethod \"manual\".",
-            "Use deliveryMethod \"download\" somente quando o texto descrever entrega automática por arquivo ou download, sem sessão ao vivo.",
-          ].join(" "),
-        },
-        { role: "user", content: text },
-      ],
-    }),
-  });
-
-  const payload = (await response.json().catch(() => null)) as {
-    choices?: { message?: { content?: string } }[];
-    error?: { message?: string };
-  } | null;
-  if (!response.ok) {
-    throw new Error(payload?.error?.message || "A IA não respondeu.");
+  let parsed = await askProductModel(key, text);
+  if (descriptionDrifted(String(parsed.description ?? ""), text)) {
+    parsed = await askProductModel(
+      key,
+      `${text}\n\nA descrição anterior trocou o assunto. Reescreva somente sobre o título e o nicho deste texto. É uma sessão ao vivo no Google Meet. Sem funil, sem produto digital, sem download e sem acesso automático.`,
+    );
   }
-  const content = payload?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("A IA não devolveu o produto.");
-
-  const parsed = parseModelJson(content);
   const price = numberValue(parsed.price);
   if (price == null || price <= 0) {
     throw new Error("Inclua o preço no texto. Exemplo: mentoria de 4 encontros por R$ 497.");
@@ -121,6 +76,72 @@ export async function generateProductDraft(prompt: string): Promise<ProductBody>
     throw new Error(message);
   }
   return result.data;
+}
+
+const DRIFT = ["sales funnel", "funil", "digital product", "produto digital", "automatic delivery", "acesso automático", "self-paced", "self paced", "instant download"];
+
+function descriptionDrifted(description: string, source: string) {
+  const live = /google meet|live 1:1|mentoria|mentorship|consultoria ao vivo/i.test(source);
+  if (!live) return false;
+  const written = description.toLowerCase();
+  const asked = source.toLowerCase();
+  return DRIFT.some((word) => written.includes(word) && !asked.includes(word));
+}
+
+async function askProductModel(key: string, text: string) {
+  const model = process.env.XAI_MODEL || "grok-3-mini";
+  const response = await fetch(process.env.XAI_URL || "https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: [
+            "Você monta o produto da loja a partir do texto do vendedor.",
+            "Responda apenas com um objeto JSON.",
+            "Campos: name, subtitle, description, productType, deliveryMethod, price, currency, slug, status, prices.",
+            `productType: ${[...productTypes].join(", ")}.`,
+            `deliveryMethod: ${[...deliveries].join(", ")}.`,
+            `currency: ${[...currencies].join(", ")}.`,
+            "status: active ou draft. Use active, salvo se o texto pedir rascunho.",
+            "O preço tem de ser exatamente o número escrito no texto. Não arredonde e não invente outro valor.",
+            "R$, real ou reais = brl. US$, USD ou dólar = usd. € ou euro = eur. Se a moeda não aparecer, use usd.",
+            "Se houver mais de um preço, o principal vai em price e os demais em prices, cada um com label e amount.",
+            "prices tem no máximo 5 itens. Não repita o preço principal.",
+            "name até 80 caracteres. subtitle até 80. description é o texto de venda, no mesmo idioma do prompt, com 3 parágrafos e entre 900 e 1600 caracteres.",
+            "O assunto da description é o título e o nicho escritos no texto. Não troque o tema.",
+            "Se o texto for mentoria ou consultoria ao vivo, o primeiro parágrafo diz o que essa sessão cobre nesse nicho. O segundo descreve a call e o que o comprador sai sabendo fazer nesse mesmo assunto. O terceiro explica a entrega: pagamento único, link do Google Meet por WhatsApp depois do pagamento, gravação dessa sessão, suporte só durante a call, sem promessa de renda.",
+            "Não descreva produto digital, funil, download, acesso automático nem self-paced quando o texto for uma sessão ao vivo. Não invente outro negócio.",
+            "Não escreva uma descrição de uma frase só.",
+            "slug em minúsculas, com hífens, sem acento, até 48 caracteres.",
+            "Não invente imageUrl. Não inclua campos fora dessa lista.",
+            "Se o texto não tiver preço, use price 0.",
+            "Se o texto descreve mentoria ou consultoria ao vivo 1:1 (sessão em tempo real no Google Meet, link enviado por WhatsApp após o pagamento, gravação inclusa), use productType \"mentoria_1_1\" e deliveryMethod \"manual\".",
+            "Use deliveryMethod \"download\" somente quando o texto descrever entrega automática por arquivo ou download, sem sessão ao vivo.",
+          ].join(" "),
+        },
+        { role: "user", content: text },
+      ],
+    }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as {
+    choices?: { message?: { content?: string } }[];
+    error?: { message?: string };
+  } | null;
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || "A IA não respondeu.");
+  }
+  const content = payload?.choices?.[0]?.message?.content;
+  if (!content) throw new Error("A IA não devolveu o produto.");
+  return parseModelJson(content);
 }
 
 function parseModelJson(content: string): Record<string, unknown> {
