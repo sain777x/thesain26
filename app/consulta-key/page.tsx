@@ -100,8 +100,8 @@ function ConsultaContent() {
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
                   <div className="flex gap-4">
-                    <span>Ganhos: ${acc.total_earned.toFixed(2)}</span>
-                    <span>Saldo: ${acc.balance.toFixed(2)}</span>
+                    <span>Ganhos: ${Number(acc.total_earned || 0).toFixed(2)}</span>
+                    <span>Saldo: ${Number(acc.balance || 0).toFixed(2)}</span>
                   </div>
                   {acc.required_actions.length > 0 && (
                     <div className="space-y-1">
