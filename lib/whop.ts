@@ -112,7 +112,8 @@ export type CompanyProfileInput = {
  * Não reenviamos metadata aqui para não apagar o external_id gravado no create.
  */
 export async function syncCompanyProfile(accountId: string, input: CompanyProfileInput) {
-  const client = getWhop();
+  const user = await prisma.user.findFirst({ where: { whopBizId: accountId }, select: { whopApiKey: true } });
+  const client = getWhop(user?.whopApiKey);
   const classification = toWhopClassification(input.businessType, input.industryType);
   const businessAddress = input.addressLine1
     ? {
@@ -183,7 +184,8 @@ export async function createAccountLink(params: {
   returnUrl: string;
   refreshUrl: string;
 }) {
-  const client = getWhop();
+  const user = await prisma.user.findFirst({ where: { whopBizId: params.accountId }, select: { whopApiKey: true } });
+  const client = getWhop(user?.whopApiKey);
   const link = await client.accountLinks.create({
     account_id: params.accountId,
     use_case: params.useCase,
@@ -203,7 +205,8 @@ export async function createAccountLink(params: {
  */
 export async function businessReviewPortalUrl(accountId: string, _origin?: string) {
   try {
-    const account = await getWhop().accounts.retrieve({ id: accountId });
+    const user = await prisma.user.findFirst({ where: { whopBizId: accountId }, select: { whopApiKey: true } });
+    const account = await getWhop(user?.whopApiKey).accounts.retrieve({ id: accountId });
     const action = account.required_actions?.find(
       (item) => item.action === "submit_information_request" && item.cta,
     );
