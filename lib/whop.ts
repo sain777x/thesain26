@@ -341,7 +341,7 @@ export async function syncCheckoutProduct(input: {
 }) {
   const user = await prisma.user.findFirst({ where: { whopBizId: input.accountId }, select: { whopApiKey: true } });
   const apiKey = user?.whopApiKey;
-  const client = getWhop(input.apiKey);
+  const client = getWhop(apiKey);
   const title = input.name.trim().slice(0, 80);
   if (title.length < 2) {
     throw new Error("O nome do produto precisa ter pelo menos 2 caracteres.");
