@@ -68,20 +68,25 @@ function asAccount(detail: any, local: Map<string, { id: string; sales: number; 
 
 async function readKey(apiKey: string, local: Map<string, { id: string; sales: number; feeOverride: number | null }>) {
   const listed = await whopGet(apiKey, "/accounts?limit=100");
-  const ids = (listed.data || []).map((item: any) => item.id).filter(Boolean) as string[];
+  const rows = (listed.data || []).filter((item: any) => item?.id) as any[];
   const details: any[] = [];
-  for (let index = 0; index < ids.length; index += 4) {
-    const slice = ids.slice(index, index + 4);
+  for (let index = 0; index < rows.length; index += 4) {
+    const slice = rows.slice(index, index + 4);
     const batch = await Promise.all(
-      slice.map(async (id) => {
+      slice.map(async (item) => {
         try {
-          return await whopGet(apiKey, `/accounts/${id}`);
+          const detail = await whopGet(apiKey, `/accounts/${item.id}`);
+          return { ...item, ...detail, status: detail.status || item.status || "unknown" };
         } catch {
-          return null;
+          return {
+            ...item,
+            status: item.status || "unknown",
+            parent_account: item.parent_account === undefined ? "lista" : item.parent_account,
+          };
         }
       }),
     );
-    details.push(...batch.filter(Boolean));
+    details.push(...batch);
   }
   const accounts = details.map((detail) => asAccount(detail, local));
   const mother = accounts.find((account) => account.kind === "mae") ?? null;
@@ -98,7 +103,10 @@ export async function loadKeyGroups(): Promise<KeyGroup[]> {
       where: { whopBizId: { not: null } },
       select: {
         id: true,
+        email: true,
         whopBizId: true,
+        whopApiKey: true,
+        accountStatus: true,
         feePercentOverride: true,
         _count: { select: { sales: true } },
       },
@@ -116,14 +124,49 @@ export async function loadKeyGroups(): Promise<KeyGroup[]> {
   for (const key of keys) {
     try {
       const read = await readKey(key.apiKey, local);
+      const seen = new Set([read.mother?.id, ...read.subs.map((account) => account.id)].filter(Boolean));
+      for (const user of users) {
+        if (user.whopApiKey !== key.apiKey || !user.whopBizId || seen.has(user.whopBizId)) continue;
+        read.subs.push({
+          id: user.whopBizId,
+          email: user.email,
+          kind: "sub",
+          status: user.accountStatus || "active",
+          available: 0,
+          pending: 0,
+          reserve: 0,
+          releases: [],
+          pendencies: [],
+          localUserId: user.id,
+          sales: user._count.sales,
+          feeOverride: user.feePercentOverride,
+        });
+      }
+      read.subs.sort((left, right) => left.email.localeCompare(right.email));
       groups.push({ id: key.id, apiKey: key.apiKey, ...read });
     } catch (error) {
+      const subs = users
+        .filter((user) => user.whopApiKey === key.apiKey && user.whopBizId)
+        .map((user) => ({
+          id: user.whopBizId as string,
+          email: user.email,
+          kind: "sub" as const,
+          status: user.accountStatus || "active",
+          available: 0,
+          pending: 0,
+          reserve: 0,
+          releases: [] as { date: string; amount: number }[],
+          pendencies: [] as string[],
+          localUserId: user.id,
+          sales: user._count.sales,
+          feeOverride: user.feePercentOverride,
+        }));
       groups.push({
         id: key.id,
         apiKey: key.apiKey,
         error: error instanceof Error ? error.message : "Não foi possível ler esta key.",
         mother: null,
-        subs: [],
+        subs,
       });
     }
   }
