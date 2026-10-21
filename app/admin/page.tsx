@@ -31,17 +31,38 @@ export default async function AdminPage() {
       _sum: { applicationFee: true, amount: true },
       _count: true,
     }),
-    loadPlatformTreasury(),
+    within(loadPlatformTreasury().catch(() => []), 8000, []),
   ]);
 
-  const treasuryRows: TreasuryRow[] = await mapPool(sellers, 4, async (seller) => ({
-    id: seller.id,
-    name: seller.name,
-    email: seller.email,
-    store: seller.store?.name ?? null,
-    account: seller.whopBizId,
-    treasury: seller.whopBizId ? await loadSellerTreasury(seller.whopBizId) : null,
-  }));
+  const treasuryRows: TreasuryRow[] = await within(
+    mapPool(sellers, 4, async (seller) => {
+      let treasury = null;
+      if (seller.whopBizId) {
+        try {
+          treasury = await loadSellerTreasury(seller.whopBizId, seller.whopApiKey);
+        } catch {
+          treasury = null;
+        }
+      }
+      return {
+        id: seller.id,
+        name: seller.name,
+        email: seller.email,
+        store: seller.store?.name ?? null,
+        account: seller.whopBizId,
+        treasury,
+      };
+    }),
+    12000,
+    sellers.map((seller) => ({
+      id: seller.id,
+      name: seller.name,
+      email: seller.email,
+      store: seller.store?.name ?? null,
+      account: seller.whopBizId,
+      treasury: null,
+    })),
+  );
   const standingById = new Map(
     treasuryRows.map((row) => [row.id, row.treasury?.standing ?? null]),
   );
@@ -100,9 +121,15 @@ export default async function AdminPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Saldo da conta Whop onde entram as comissões dos vendedores que vendem pelo site.
+            Saldo da conta mãe de cada key já salva nas sub-contas.
           </p>
-          <PlatformBalance title={platform.title} treasury={platform.treasury} />
+          {platform.length === 0 ? (
+            <p className="text-sm text-muted-foreground">A leitura da conta mãe não respondeu a tempo.</p>
+          ) : (
+            platform.map((item) => (
+              <PlatformBalance key={item.id} title={item.title} treasury={item.treasury} />
+            ))
+          )}
         </CardContent>
       </Card>
 
@@ -220,6 +247,22 @@ export default async function AdminPage() {
       </Card>
     </div>
   );
+}
+
+async function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      },
+    );
+  });
 }
 
 async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>) {

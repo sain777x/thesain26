@@ -522,8 +522,17 @@ function nextRelease(candidates: string[], today: string) {
 /**
  * Saldo como a Whop mostra na conta: disponível, pendente (com o dia da
  * liberação) e reserva. A data do pendente vem de pending_settlements.
+ * Nunca estoura: uma conta sem key ou com a Whop fora do ar não derruba o painel.
  */
 export async function loadSellerTreasury(accountId: string, apiKey?: string | null): Promise<SellerTreasury> {
+  try {
+    return await readSellerTreasury(accountId, apiKey);
+  } catch (error) {
+    return emptyTreasury("usd", whopErrorMessage(error));
+  }
+}
+
+async function readSellerTreasury(accountId: string, apiKey?: string | null): Promise<SellerTreasury> {
   const client = getWhop(apiKey || (await sellerKey(accountId)));
   let accountStatus: string | null = null;
   let accountReason: string | null = null;
@@ -687,21 +696,55 @@ export async function loadSellerTreasury(accountId: string, apiKey?: string | nu
   };
 }
 
-/** Conta Whop da plataforma, onde caem as comissões dos vendedores. */
-export async function loadPlatformTreasury(): Promise<PlatformTreasury> {
+/** Contas mãe das keys já salvas nas sub-contas. Não usa variável de ambiente. */
+export async function loadPlatformTreasury(): Promise<PlatformTreasury[]> {
+  const blank = (error: string | null): PlatformTreasury => ({
+    id: "platform",
+    title: "Conta principal",
+    treasury: emptyTreasury("usd", error),
+  });
   try {
-    return {
-      id: "platform",
-      title: "Conta principal",
-      treasury: emptyTreasury("usd", null),
-    };
+    const rows = await prisma.user.findMany({
+      where: { whopApiKey: { not: null } },
+      select: { whopApiKey: true },
+    });
+    const keys = [...new Set(rows.map((row) => row.whopApiKey).filter((key): key is string => Boolean(key)))];
+    if (keys.length === 0) return [blank("Nenhuma key salva nas contas.")];
+    const found: PlatformTreasury[] = [];
+    for (const apiKey of keys) {
+      const mother = await motherAccount(apiKey);
+      if (!mother) continue;
+      found.push({
+        id: mother.id,
+        title: mother.title,
+        treasury: await loadSellerTreasury(mother.id, apiKey),
+      });
+    }
+    return found.length > 0 ? found : [blank("Não foi possível ler a conta mãe com as keys salvas.")];
   } catch (error) {
-    return {
-      id: "",
-      title: "Conta principal",
-      treasury: emptyTreasury("usd", whopErrorMessage(error)),
-    };
+    return [blank(whopErrorMessage(error))];
   }
+}
+
+async function motherAccount(apiKey: string) {
+  const headers = { Authorization: `Bearer ${apiKey}` };
+  const list = await fetch("https://api.whop.com/api/v1/accounts?limit=100", { headers });
+  if (!list.ok) return null;
+  const data = (await list.json()) as { data?: { id?: string }[] };
+  for (const account of data.data ?? []) {
+    if (!account.id) continue;
+    const detailRes = await fetch(`https://api.whop.com/api/v1/accounts/${account.id}`, { headers });
+    if (!detailRes.ok) continue;
+    const detail = (await detailRes.json()) as {
+      id?: string;
+      email?: string;
+      title?: string;
+      parent_account?: unknown;
+    };
+    if (detail.parent_account || !detail.id) continue;
+    return { id: detail.id, title: detail.email || detail.title || detail.id };
+  }
+  return null;
 }
 
 export function treasuryOf(balance: BalanceSnapshot | null): Pick<
