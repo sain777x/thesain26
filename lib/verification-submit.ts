@@ -6,7 +6,7 @@ async function getWhopForAccount(accountId: string) {
   return getWhop(user?.whopApiKey);
 }
 
-import { getWhop, whopErrorMessage } from "@/lib/whop";
+import { getWhop, streetLineForWhop, whopErrorMessage } from "@/lib/whop";
 
 const FILE_ID = /^file_[A-Za-z0-9]+$/;
 const ITEM_ID = /^inrqi_[A-Za-z0-9]+$/;
@@ -350,7 +350,7 @@ export async function submitVerificationAnswers(params: {
       return {
         id: item.id,
         address: {
-          line1: address.line1,
+          line1: streetLineForWhop(address.line1),
           line2: address.line2 || null,
           city: address.city,
           state: address.state,

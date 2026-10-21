@@ -116,6 +116,17 @@ export type CompanyProfileInput = {
   addressPostalCode?: string | null;
 };
 
+/** A Whop exige o número no começo da linha. "Cortlandt Street, 581" vira "581 Cortlandt Street". */
+export function streetLineForWhop(line1: string) {
+  const value = line1.trim().replace(/\s+/g, " ");
+  if (!value || /^\d/.test(value)) return value;
+  const match = value.match(/^(.*?)(?:,\s*|\s+)(\d+[A-Za-z]?(?:[/-]\d+[A-Za-z]?)?)\.?$/);
+  if (!match) return value;
+  const street = match[1].replace(/,\s*$/, "").trim();
+  if (!street || /^\d/.test(street)) return value;
+  return `${match[2]} ${street}`;
+}
+
 /**
  * Envia o perfil da empresa para a Connected Account.
  * O mapa de business_type / industry_group / industry_type está em lib/business.ts.
@@ -127,7 +138,7 @@ export async function syncCompanyProfile(accountId: string, input: CompanyProfil
   const classification = toWhopClassification(input.businessType, input.industryType);
   const businessAddress = input.addressLine1
     ? {
-        line1: input.addressLine1,
+        line1: streetLineForWhop(input.addressLine1),
         line2: input.addressLine2 || null,
         city: input.addressCity || null,
         state: input.addressState || null,
@@ -265,9 +276,10 @@ export async function openVerificationSession(params: {
   const raw = account.business_address;
   const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
   const country = text(account.country)?.toUpperCase() || text(raw?.country)?.toUpperCase();
+  const line1 = raw && text(raw.line1) ? streetLineForWhop(text(raw.line1) as string) : null;
   const address = raw
     ? {
-        line1: text(raw.line1) ?? null,
+        line1,
         line2: text(raw.line2) ?? null,
         city: text(raw.city) ?? null,
         state: text(raw.state) ?? null,
@@ -275,6 +287,12 @@ export async function openVerificationSession(params: {
         country: text(raw.country)?.toUpperCase() || country || null,
       }
     : undefined;
+  if (raw && address?.line1 && address.line1 !== text(raw.line1)) {
+    await client.accounts.update({
+      id: params.accountId,
+      business_address: address,
+    } as Parameters<typeof client.accounts.update>[0]);
+  }
   const created = await client.verifications.create({
     account_id: params.accountId,
     body: {
