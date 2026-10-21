@@ -156,10 +156,9 @@ export async function ensureBusinessVerification(accountId: string): Promise<Ope
 
   if (!business) {
     try {
-      // @ts-ignore - SDK may or may not type create; raw call works
-      const created = await (client.verifications as any).create({
+      const created = await client.verifications.create({
         account_id: accountId,
-        kind: "business",
+        body: { kind: "business" },
       });
       if (created?.id) business = created;
     } catch (error) {

@@ -272,7 +272,7 @@ export default async function VerificacoesPage({
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Esta parte é o KYC. Escolha individual ou empresarial para abrir o fluxo de identidade. A análise do negócio é o outro card.
+                    Esta parte é o KYC. Individual abre a verificação da pessoa. Empresarial abre a verificação da empresa, não a da pessoa. A análise do negócio é o outro card.
                   </p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {desk.identity.map((item) => (

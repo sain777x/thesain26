@@ -228,9 +228,10 @@ export async function businessReviewPortalUrl(accountId: string, _origin?: strin
 }
 
 /**
- * Sessão hospedada de identidade (KYC), já autenticada pela plataforma.
- * A Whop ignora `kind` nesta URL: o fluxo é sempre o de verify-identity.
- * O pedido de informações do negócio não passa por aqui.
+ * Abre a verificação certa para o botão escolhido.
+ * Individual continua no account link de identidade.
+ * Empresarial cria (ou reabre) a verificação kind=business e usa o session_url dela.
+ * O account link de onboarding ignora o tipo e sempre cai no KYC da pessoa.
  */
 export async function openVerificationSession(params: {
   accountId: string;
@@ -238,13 +239,53 @@ export async function openVerificationSession(params: {
   returnUrl: string;
   refreshUrl: string;
 }) {
-  void params.kind;
-  return createAccountLink({
-    accountId: params.accountId,
-    useCase: "account_onboarding",
-    returnUrl: params.returnUrl,
-    refreshUrl: params.refreshUrl,
+  if (params.kind !== "business") {
+    return createAccountLink({
+      accountId: params.accountId,
+      useCase: "account_onboarding",
+      returnUrl: params.returnUrl,
+      refreshUrl: params.refreshUrl,
+    });
+  }
+
+  const client = getWhop(await keyFor(params.accountId));
+  const list = await client.verifications.list({ account_id: params.accountId });
+  const current = (list.data ?? []).find((item) => item.kind === "business" && item.status !== "approved");
+  if (current?.session_url) return current.session_url;
+  if (current?.id) {
+    try {
+      const full = await client.verifications.retrieve({ id: current.id });
+      if (full.session_url) return full.session_url;
+    } catch (error) {
+      console.error("[thesain26] verifications.retrieve business", whopErrorMessage(error));
+    }
+  }
+
+  const account = await client.accounts.retrieve({ id: params.accountId });
+  const raw = account.business_address;
+  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
+  const country = text(account.country)?.toUpperCase() || text(raw?.country)?.toUpperCase();
+  const address = raw
+    ? {
+        line1: text(raw.line1) ?? null,
+        line2: text(raw.line2) ?? null,
+        city: text(raw.city) ?? null,
+        state: text(raw.state) ?? null,
+        postal_code: text(raw.postal_code) ?? null,
+        country: text(raw.country)?.toUpperCase() || country || null,
+      }
+    : undefined;
+  const created = await client.verifications.create({
+    account_id: params.accountId,
+    body: {
+      kind: "business",
+      business_name: text(account.business_name) || text(account.title),
+      country,
+      address,
+    },
   });
+  if (created.session_url) return created.session_url;
+  throw new Error("A Whop não abriu a verificação empresarial.");
 }
 
 type DirectChargeInput = {
