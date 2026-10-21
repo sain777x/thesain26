@@ -131,7 +131,9 @@ export default async function AdminPage() {
         </Card>
       ) : (
         groups.map((group) => {
-          const rows = [...(group.mother ? [group.mother] : []), ...group.subs];
+          const rows = [...(group.mother ? [group.mother] : []), ...group.subs].filter(
+            (account) => account.status.toLowerCase() !== "suspended",
+          );
           return (
             <Card key={group.id}>
               <CardHeader>

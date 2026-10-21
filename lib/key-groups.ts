@@ -85,7 +85,7 @@ async function readKey(apiKey: string, local: Map<string, { id: string; sales: n
   }
   const accounts = details
     .map((detail) => asAccount(detail, local))
-    .filter((account) => account.status !== "suspended");
+    .filter((account) => account.status.toLowerCase() !== "suspended");
   const mother = accounts.find((account) => account.kind === "mae") ?? null;
   const subs = accounts
     .filter((account) => account.kind === "sub")
