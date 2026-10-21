@@ -138,6 +138,13 @@ model PlatformSettings {
   name       String @default("thesain26")
 }
 
+/// Key da conta mãe. Fica aqui mesmo quando a sub-conta some do cadastro.
+model WhopKey {
+  id        String   @id @default(cuid())
+  apiKey    String   @unique
+  createdAt DateTime @default(now())
+}
+
 /// Idempotência dos webhooks (o header webhook-id).
 model WebhookEvent {
   id        String   @id

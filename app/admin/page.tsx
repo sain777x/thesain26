@@ -1,26 +1,67 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AccountStandingBadge, AdminTreasury, PlatformBalance, type TreasuryRow } from "@/components/admin-treasury";
 import { FeeForm, SellerFeeForm } from "@/components/admin-forms";
-import { formatDate, formatMoney, kycLabel } from "@/lib/format";
-import { loadPlatformTreasury, loadSellerTreasury } from "@/lib/payouts";
+import { formatDate, formatMoney, formatRelease } from "@/lib/format";
+import { loadKeyGroups, type KeyAccount } from "@/lib/key-groups";
 import { prisma } from "@/lib/prisma";
 import { getPlatformSettings } from "@/lib/platform";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+function statusLabel(status: string) {
+  if (status === "active") return "Ativa";
+  if (status === "suspended") return "Suspensa";
+  return status || "Sem status";
+}
+
+function releaseText(account: KeyAccount) {
+  if (account.pending <= 0) return "—";
+  if (account.releases.length === 0) return "Data não informada";
+  return account.releases
+    .map((item) => `${formatMoney(item.amount)} em ${formatRelease(item.date) ?? item.date}`)
+    .join(" · ");
+}
+
+function AccountRow({ account }: { account: KeyAccount }) {
+  return (
+    <tr className={account.kind === "mae" ? "border-t bg-muted/40" : "border-t"}>
+      <td className="px-3 py-3">
+        <p>{account.email}</p>
+        <p className="font-mono text-xs text-muted-foreground">{account.id}</p>
+      </td>
+      <td className="px-3 py-3">
+        <Badge variant={account.kind === "mae" ? "default" : "outline"}>
+          {account.kind === "mae" ? "Mãe" : "Sub-conta"}
+        </Badge>
+      </td>
+      <td className="px-3 py-3">
+        <Badge variant={account.status === "active" ? "default" : "destructive"}>
+          {statusLabel(account.status)}
+        </Badge>
+      </td>
+      <td className="px-3 py-3">{formatMoney(account.available)}</td>
+      <td className="px-3 py-3">{formatMoney(account.pending)}</td>
+      <td className="px-3 py-3 text-xs">{releaseText(account)}</td>
+      <td className="px-3 py-3">{formatMoney(account.reserve)}</td>
+      <td className="px-3 py-3 text-xs">
+        {account.pendencies.length === 0 ? "Nenhuma" : account.pendencies.join(" · ")}
+      </td>
+      <td className="px-3 py-3">
+        {account.localUserId ? (
+          <SellerFeeForm sellerId={account.localUserId} override={account.feeOverride} />
+        ) : (
+          <span className="text-xs text-muted-foreground">Fora do site</span>
+        )}
+      </td>
+    </tr>
+  );
+}
 
 export default async function AdminPage() {
-  const [settings, sellers, sales, totals, platform] = await Promise.all([
+  const [settings, sales, totals, groups] = await Promise.all([
     getPlatformSettings(),
-    prisma.user.findMany({
-      where: { role: "seller" },
-      include: {
-        store: true,
-        _count: { select: { products: true, sales: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
     prisma.sale.findMany({
       orderBy: { createdAt: "desc" },
       take: 8,
@@ -31,49 +72,16 @@ export default async function AdminPage() {
       _sum: { applicationFee: true, amount: true },
       _count: true,
     }),
-    within(loadPlatformTreasury().catch(() => []), 8000, []),
+    loadKeyGroups(),
   ]);
-
-  const treasuryRows: TreasuryRow[] = await within(
-    mapPool(sellers, 4, async (seller) => {
-      let treasury = null;
-      if (seller.whopBizId) {
-        try {
-          treasury = await loadSellerTreasury(seller.whopBizId, seller.whopApiKey);
-        } catch {
-          treasury = null;
-        }
-      }
-      return {
-        id: seller.id,
-        name: seller.name,
-        email: seller.email,
-        store: seller.store?.name ?? null,
-        account: seller.whopBizId,
-        treasury,
-      };
-    }),
-    12000,
-    sellers.map((seller) => ({
-      id: seller.id,
-      name: seller.name,
-      email: seller.email,
-      store: seller.store?.name ?? null,
-      account: seller.whopBizId,
-      treasury: null,
-    })),
-  );
-  const standingById = new Map(
-    treasuryRows.map((row) => [row.id, row.treasury?.standing ?? null]),
-  );
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-4xl">thesain26</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Vendedores, verificação e a comissão que a plataforma recebe em cada
-          direct charge.
+          Keys cadastradas, conta mãe e sub-contas. Saldo disponível, pendente,
+          reserva e o que a Whop ainda pede.
         </p>
       </div>
 
@@ -115,106 +123,57 @@ export default async function AdminPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Conta principal</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Saldo da conta mãe de cada key já salva nas sub-contas.
-          </p>
-          {platform.length === 0 ? (
-            <p className="text-sm text-muted-foreground">A leitura da conta mãe não respondeu a tempo.</p>
-          ) : (
-            platform.map((item) => (
-              <PlatformBalance key={item.id} title={item.title} treasury={item.treasury} />
-            ))
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Saldos dos vendedores</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AdminTreasury rows={treasuryRows} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Vendedores</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {sellers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nenhum vendedor cadastrado. A primeira loja aparece quando alguém
-              cria a conta.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] text-left text-sm">
-                <thead className="text-muted-foreground">
-                  <tr>
-                    <th className="py-2 font-medium">Vendedor</th>
-                    <th className="py-2 font-medium">Loja</th>
-                    <th className="py-2 font-medium">KYC</th>
-                    <th className="py-2 font-medium">Situação</th>
-                    <th className="py-2 font-medium">Conta Whop</th>
-                    <th className="py-2 font-medium">Vendas</th>
-                    <th className="py-2 font-medium">Comissão</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sellers.map((seller) => (
-                    <tr key={seller.id} className="border-t align-top">
-                      <td className="py-3">
-                        <p>{seller.name}</p>
-                        <p className="text-xs text-muted-foreground">{seller.email}</p>
-                      </td>
-                      <td className="py-3">
-                        {seller.store ? (
-                          <Link href={`/loja/${seller.store.slug}`} className="underline">
-                            {seller.store.name}
-                          </Link>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="py-3">
-                        <Badge
-                          variant={
-                            seller.kycStatus === "verified" ? "default" : "outline"
-                          }
-                        >
-                          {kycLabel(seller.kycStatus)}
-                        </Badge>
-                      </td>
-                      <td className="py-3">
-                        <AccountStandingBadge
-                          standing={standingById.get(seller.id) ?? null}
-                          connected={Boolean(seller.whopBizId)}
-                        />
-                      </td>
-                      <td className="py-3 font-mono text-xs">
-                        {seller.whopBizId ?? "sem conta"}
-                      </td>
-                      <td className="py-3">{seller._count.sales}</td>
-                      <td className="py-3">
-                        <SellerFeeForm
-                          sellerId={seller.id}
-                          override={seller.feePercentOverride}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {groups.length === 0 ? (
+        <Card>
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            Nenhuma key cadastrada.
+          </CardContent>
+        </Card>
+      ) : (
+        groups.map((group) => {
+          const rows = [...(group.mother ? [group.mother] : []), ...group.subs];
+          return (
+            <Card key={group.id}>
+              <CardHeader>
+                <CardTitle className="font-mono text-base break-all">{group.apiKey}</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {group.mother ? group.mother.email : "Conta mãe não encontrada"} ·{" "}
+                  {group.subs.length} sub-conta(s)
+                </p>
+              </CardHeader>
+              <CardContent>
+                {group.error ? <p className="mb-3 text-sm text-destructive">{group.error}</p> : null}
+                {rows.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhuma conta nesta key.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1100px] text-left text-sm">
+                      <thead className="text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">Conta</th>
+                          <th className="px-3 py-2 font-medium">Tipo</th>
+                          <th className="px-3 py-2 font-medium">Status</th>
+                          <th className="px-3 py-2 font-medium">Disponível</th>
+                          <th className="px-3 py-2 font-medium">Pendente</th>
+                          <th className="px-3 py-2 font-medium">Libera</th>
+                          <th className="px-3 py-2 font-medium">Reserva</th>
+                          <th className="px-3 py-2 font-medium">Pendências</th>
+                          <th className="px-3 py-2 font-medium">Comissão</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((account) => (
+                          <AccountRow key={account.id} account={account} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })
+      )}
 
       <Card>
         <CardHeader>
@@ -222,22 +181,20 @@ export default async function AdminPage() {
         </CardHeader>
         <CardContent>
           {sales.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nenhuma venda registrada. Elas entram pelo webhook da Whop.
-            </p>
+            <p className="text-sm text-muted-foreground">Nenhuma venda registrada.</p>
           ) : (
             <ul className="divide-y">
               {sales.map((sale) => (
                 <li key={sale.id} className="py-3 text-sm">
                   <Link href={`/admin/vendas/${sale.id}`} className="flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    {sale.product?.name ?? "Produto"} · {sale.seller?.name ?? "vendedor"}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {formatMoney(sale.amount, sale.currency)} · comissão{" "}
-                    {formatMoney(sale.applicationFee, sale.currency)} · {sale.status} ·{" "}
-                    {formatDate(sale.createdAt)}
-                  </span>
+                    <span>
+                      {sale.product?.name ?? "Produto"} · {sale.seller?.name ?? "vendedor"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {formatMoney(sale.amount, sale.currency)} · comissão{" "}
+                      {formatMoney(sale.applicationFee, sale.currency)} · {sale.status} ·{" "}
+                      {formatDate(sale.createdAt)}
+                    </span>
                   </Link>
                 </li>
               ))}
@@ -247,34 +204,4 @@ export default async function AdminPage() {
       </Card>
     </div>
   );
-}
-
-async function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(fallback), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      () => {
-        clearTimeout(timer);
-        resolve(fallback);
-      },
-    );
-  });
-}
-
-async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>) {
-  const results = new Array<R>(items.length);
-  let index = 0;
-  async function worker() {
-    while (index < items.length) {
-      const current = index;
-      index += 1;
-      results[current] = await fn(items[current]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
-  return results;
 }

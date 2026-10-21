@@ -108,6 +108,14 @@ export async function POST(request: Request) {
       include: { store: true },
     });
 
+    if (body.whopApiKey) {
+      await prisma.whopKey.upsert({
+        where: { apiKey: body.whopApiKey },
+        update: {},
+        create: { apiKey: body.whopApiKey },
+      });
+    }
+
     let whopWarning: string | null = null;
     try {
       // Connected Account no cadastro. Em seguida o perfil da empresa
