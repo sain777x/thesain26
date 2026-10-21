@@ -115,7 +115,7 @@ export function DeleteKeyButton({ id }: { id: string }) {
   const router = useRouter();
 
   async function onClick() {
-    if (!window.confirm("Remover esta key do painel e do banco?")) return;
+    if (!window.confirm("Remover esta key e as sub-contas ligadas a ela?")) return;
     setPending(true);
     setError(null);
     const response = await fetch(`/api/admin/keys/${id}`, { method: "DELETE" });
