@@ -127,6 +127,15 @@ export function streetLineForWhop(line1: string) {
   return `${match[2]} ${street}`;
 }
 
+/** Sufixo do nome que a loja já tem. Não inventa EIN nem número de registro. */
+function businessStructureFor(name: string, country: string) {
+  const label = name.toLowerCase();
+  const code = country.toUpperCase();
+  if (code === "US" && /\b(inc\.?|incorporated|corp\.?|corporation)\b/.test(label)) return "private_corporation";
+  if (code === "GB" && /\b(ltd\.?|limited|plc)\b/.test(label)) return "private_corporation";
+  return undefined;
+}
+
 /**
  * Envia o perfil da empresa para a Connected Account.
  * O mapa de business_type / industry_group / industry_type está em lib/business.ts.
@@ -260,8 +269,58 @@ export async function openVerificationSession(params: {
   }
 
   const client = getWhop(await keyFor(params.accountId));
+  const account = await client.accounts.retrieve({ id: params.accountId });
+  const store = await prisma.user.findFirst({
+    where: { whopBizId: params.accountId },
+    select: {
+      store: {
+        select: {
+          name: true,
+          country: true,
+          addressLine1: true,
+          addressLine2: true,
+          addressCity: true,
+          addressState: true,
+          addressPostal: true,
+        },
+      },
+    },
+  });
+  const saved = store?.store;
+  const raw = account.business_address;
+  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
+  const country = (text(saved?.country) || text(account.country) || text(raw?.country) || "").toUpperCase();
+  const line1 = streetLineForWhop(text(saved?.addressLine1) || text(raw?.line1) || "");
+  const businessName = text(saved?.name) || text(account.business_name) || text(account.title);
+  const address = line1
+    ? {
+        line1,
+        line2: text(saved?.addressLine2) || text(raw?.line2) || null,
+        city: text(saved?.addressCity) || text(raw?.city) || null,
+        state: text(saved?.addressState) || text(raw?.state) || null,
+        postal_code: text(saved?.addressPostal) || text(raw?.postal_code) || null,
+        country: country || null,
+      }
+    : undefined;
+  const structure = businessName && country ? businessStructureFor(businessName, country) : undefined;
+
   const list = await client.verifications.list({ account_id: params.accountId });
   const current = (list.data ?? []).find((item) => item.kind === "business" && item.status !== "approved");
+  if (current?.id && (businessName || address)) {
+    try {
+      await client.verifications.update({
+        id: current.id,
+        body: {
+          ...(businessName ? { business_name: businessName } : {}),
+          ...(country ? { country } : {}),
+          ...(structure ? { business_structure: structure } : {}),
+          ...(address ? { business_address: address } : {}),
+        },
+      } as Parameters<typeof client.verifications.update>[0]);
+    } catch (error) {
+      console.error("[thesain26] verifications.update business", whopErrorMessage(error));
+    }
+  }
   if (current?.session_url) return current.session_url;
   if (current?.id) {
     try {
@@ -272,21 +331,6 @@ export async function openVerificationSession(params: {
     }
   }
 
-  const account = await client.accounts.retrieve({ id: params.accountId });
-  const raw = account.business_address;
-  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
-  const country = text(account.country)?.toUpperCase() || text(raw?.country)?.toUpperCase();
-  const line1 = raw && text(raw.line1) ? streetLineForWhop(text(raw.line1) as string) : null;
-  const address = raw
-    ? {
-        line1,
-        line2: text(raw.line2) ?? null,
-        city: text(raw.city) ?? null,
-        state: text(raw.state) ?? null,
-        postal_code: text(raw.postal_code) ?? null,
-        country: text(raw.country)?.toUpperCase() || country || null,
-      }
-    : undefined;
   if (raw && address?.line1 && address.line1 !== text(raw.line1)) {
     await client.accounts.update({
       id: params.accountId,
@@ -297,8 +341,9 @@ export async function openVerificationSession(params: {
     account_id: params.accountId,
     body: {
       kind: "business",
-      business_name: text(account.business_name) || text(account.title),
-      country,
+      business_name: businessName,
+      country: country || undefined,
+      business_structure: structure,
       address,
     },
   });
