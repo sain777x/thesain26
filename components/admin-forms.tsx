@@ -108,3 +108,33 @@ export function SellerFeeForm({
     </form>
   );
 }
+
+export function DeleteKeyButton({ id }: { id: string }) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const router = useRouter();
+
+  async function onClick() {
+    if (!window.confirm("Apagar esta key do painel?")) return;
+    setPending(true);
+    setError(null);
+    const response = await fetch(`/api/admin/keys/${id}`, { method: "DELETE" });
+    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    setPending(false);
+    if (!response.ok) {
+      setError(data.error ?? "Não foi possível apagar.");
+      return;
+    }
+    router.refresh();
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button type="button" size="sm" variant="destructive" disabled={pending} onClick={onClick}>
+        Apagar
+      </Button>
+      {error ? <span className="text-xs text-destructive">{error}</span> : null}
+    </div>
+  );
+}
+}

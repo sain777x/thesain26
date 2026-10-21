@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FeeForm, SellerFeeForm } from "@/components/admin-forms";
+import { DeleteKeyButton, FeeForm, SellerFeeForm } from "@/components/admin-forms";
 import { formatDate, formatMoney, formatRelease } from "@/lib/format";
 import { loadKeyGroups, type KeyAccount } from "@/lib/key-groups";
 import { prisma } from "@/lib/prisma";
@@ -135,7 +135,10 @@ export default async function AdminPage() {
           return (
             <Card key={group.id}>
               <CardHeader>
-                <CardTitle className="font-mono text-base break-all">{group.apiKey}</CardTitle>
+                <div className="flex items-start justify-between gap-3">
+                  <CardTitle className="font-mono text-base break-all">{group.apiKey}</CardTitle>
+                  <DeleteKeyButton id={group.id} />
+                </div>
                 <p className="text-sm text-muted-foreground">
                   {group.mother ? group.mother.email : "Conta mãe não encontrada"} ·{" "}
                   {group.subs.length} sub-conta(s)
