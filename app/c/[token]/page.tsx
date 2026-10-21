@@ -15,6 +15,9 @@ type Account = {
   status: string;
   total_earned: number;
   balance: number;
+  pending: number;
+  reserve: number;
+  payments_approval_status?: string | null;
   required_actions: { action: string; status: string; title: string }[];
   capabilities: Record<string, string>;
   created_at: string;
@@ -86,16 +89,26 @@ export default function ConsultaPage() {
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg">{acc.email}</CardTitle>
-                    <Badge variant={acc.status === "active" ? "default" : "destructive"}>
-                      {acc.status}
-                    </Badge>
+                    <div className="flex gap-2">
+                      {(acc.pending || 0) > 0 && <Badge variant="outline">pendente</Badge>}
+                      {(acc.reserve || 0) > 0 && <Badge variant="outline">reserva</Badge>}
+                      <Badge variant={acc.status === "active" ? "default" : "destructive"}>
+                        {acc.status}
+                      </Badge>
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground">{acc.id}</p>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
-                  <div className="flex gap-4">
-                    <span>Ganhos: ${acc.total_earned.toFixed(2)}</span>
-                    <span>Saldo: ${acc.balance.toFixed(2)}</span>
+                  <div className="flex flex-wrap gap-4">
+                    <span>Ganhos: ${Number(acc.total_earned || 0).toFixed(2)}</span>
+                    <span>Disponível: ${Number(acc.balance || 0).toFixed(2)}</span>
+                    <span className={(acc.pending || 0) > 0 ? "text-amber-600" : ""}>
+                      Pendente: ${Number(acc.pending || 0).toFixed(2)}
+                    </span>
+                    <span className={(acc.reserve || 0) > 0 ? "text-amber-600" : ""}>
+                      Reserva: ${Number(acc.reserve || 0).toFixed(2)}
+                    </span>
                   </div>
                   {acc.required_actions.length > 0 && (
                     <div className="space-y-1">
