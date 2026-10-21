@@ -115,7 +115,7 @@ export function DeleteKeyButton({ id }: { id: string }) {
   const router = useRouter();
 
   async function onClick() {
-    if (!window.confirm("Apagar esta key do painel?")) return;
+    if (!window.confirm("Remover esta key do painel e do banco?")) return;
     setPending(true);
     setError(null);
     const response = await fetch(`/api/admin/keys/${id}`, { method: "DELETE" });
@@ -131,7 +131,7 @@ export function DeleteKeyButton({ id }: { id: string }) {
   return (
     <div className="flex items-center gap-2">
       <Button type="button" size="sm" variant="destructive" disabled={pending} onClick={onClick}>
-        Apagar
+        Remover
       </Button>
       {error ? <span className="text-xs text-destructive">{error}</span> : null}
     </div>
