@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getWhop, whopErrorMessage, type BalanceSnapshot } from "@/lib/whop";
+import { getWhop, payoutMethodOwner, whopErrorMessage, type BalanceSnapshot } from "@/lib/whop";
 async function sellerKey(accountId: string) {
   const user = await prisma.user.findFirst({ where: { whopBizId: accountId }, select: { whopApiKey: true } });
   if (!user?.whopApiKey) throw new Error("Key da conta não configurada.");
@@ -370,6 +370,19 @@ export async function savePayoutMethod(params: {
       },
       { idempotencyKey: crypto.randomUUID() },
     );
+    const owner = await payoutMethodOwner(await sellerKey(params.accountId), created.id);
+    if (owner !== params.accountId) {
+      const createdAt = Date.parse(created.created_at);
+      const justCreated = Number.isFinite(createdAt) && Date.now() - createdAt < 2 * 60 * 1000;
+      if (owner && justCreated) {
+        await client.payouts.methods.delete({ id: created.id }).catch(() => undefined);
+      }
+      throw new Error(
+        owner
+          ? "A Whop não gravou essa carteira nesta sub-conta."
+          : "Não foi possível confirmar se a carteira ficou nesta sub-conta.",
+      );
+    }
     return created.id;
   } catch (error) {
     if (missingPayoutSetup(error)) {

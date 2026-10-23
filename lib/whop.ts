@@ -848,23 +848,44 @@ export type PayoutMethodRow = {
   estimatedArrival: string | null;
 };
 
-/** Métodos de saque já salvos na Whop. O cadastro em si abre o payouts_portal. */
+/** Dono real da carteira. A lista versionada da Whop devolve a carteira da mãe sem dizer de quem é. */
+export async function payoutMethodOwner(apiKey: string, methodId: string): Promise<string | null> {
+  const response = await fetch(`https://api.whop.com/api/v1/payout_methods/${methodId}`, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!response.ok) return null;
+  const body = (await response.json()) as { company?: { id?: string } | null; created_at?: string };
+  return typeof body.company?.id === "string" ? body.company.id : null;
+}
+
+/** Métodos de saque da própria sub-conta. Carteira da mãe, mesmo com o mesmo id, não entra. */
 export async function listPayoutMethods(accountId: string, apiKey?: string | null): Promise<PayoutMethodRow[]> {
-  const client = getWhop(await keyFor(accountId, apiKey));
+  const key = await keyFor(accountId, apiKey);
+  if (!key) throw new Error("Key da conta não configurada.");
+  const client = getWhop(key);
   const page = await client.payouts.methods.list({
     account_id: accountId,
     first: 20,
   });
-  return page.data.map((item) => ({
-    id: item.id,
-    nickname: item.nickname,
-    payerName: item.payer_name,
-    currency: item.destination_currency,
-    status: item.status,
-    reference: item.account_reference,
-    deliveryType: item.supported_payout_method?.delivery_type ?? null,
-    isDefault: item.is_default,
-    iconUrl: item.supported_payout_method?.icon_url ?? null,
-    estimatedArrival: item.estimated_arrival?.standard ?? item.estimated_arrival?.instant ?? null,
-  }));
+  const rows = await Promise.all(
+    page.data.map(async (item) => {
+      const owner = await payoutMethodOwner(key, item.id);
+      if (owner !== accountId) return null;
+      const row: PayoutMethodRow = {
+        id: item.id,
+        nickname: item.nickname,
+        payerName: item.payer_name,
+        currency: item.destination_currency,
+        status: item.status,
+        reference: item.account_reference,
+        deliveryType: item.supported_payout_method?.delivery_type ?? null,
+        isDefault: item.is_default,
+        iconUrl: item.supported_payout_method?.icon_url ?? null,
+        estimatedArrival: item.estimated_arrival?.standard ?? item.estimated_arrival?.instant ?? null,
+      };
+      return row;
+    }),
+  );
+  return rows.filter((row): row is PayoutMethodRow => row !== null);
 }
