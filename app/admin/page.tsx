@@ -46,6 +46,12 @@ function AccountRow({ account }: { account: KeyAccount }) {
       <td className="px-3 py-3">{formatMoney(account.pending)}</td>
       <td className="px-3 py-3 text-xs">{releaseText(account)}</td>
       <td className="px-3 py-3">{formatMoney(account.reserve)}</td>
+      <td className="px-3 py-3">
+        {account.withdrawn == null ? "—" : formatMoney(account.withdrawn)}
+        {account.withdrawing > 0 ? (
+          <p className="text-xs text-muted-foreground">em andamento {formatMoney(account.withdrawing)}</p>
+        ) : null}
+      </td>
       <td className="px-3 py-3 text-xs">
         {account.pendencies.length === 0 ? "Nenhuma" : account.pendencies.join(" · ")}
       </td>
@@ -161,6 +167,7 @@ export default async function AdminPage() {
                           <th className="px-3 py-2 font-medium">Pendente</th>
                           <th className="px-3 py-2 font-medium">Libera</th>
                           <th className="px-3 py-2 font-medium">Reserva</th>
+                          <th className="px-3 py-2 font-medium">Sacado</th>
                           <th className="px-3 py-2 font-medium">Pendências</th>
                           <th className="px-3 py-2 font-medium">Comissão</th>
                         </tr>

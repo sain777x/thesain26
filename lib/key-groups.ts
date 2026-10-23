@@ -9,6 +9,8 @@ export type KeyAccount = {
   available: number;
   pending: number;
   reserve: number;
+  withdrawn: number | null;
+  withdrawing: number;
   releases: { date: string; amount: number }[];
   pendencies: string[];
   localUserId: string | null;
@@ -40,6 +42,46 @@ async function whopGet(apiKey: string, path: string) {
   return response.json() as Promise<any>;
 }
 
+const OPEN_PAYOUT = new Set(["requested", "in_review", "processing"]);
+
+async function sumPayouts(apiKey: string, accountId: string) {
+  let withdrawn = 0;
+  let withdrawing = 0;
+  let after = "";
+  for (let page = 0; page < 5; page += 1) {
+    const query = new URLSearchParams({ account_id: accountId, first: "50" });
+    if (after) query.set("after", after);
+    const body = await whopGet(apiKey, `/payouts?${query.toString()}`);
+    for (const item of body.data || []) {
+      const amount = num(item.amount);
+      if (item.status === "completed") withdrawn += amount;
+      else if (OPEN_PAYOUT.has(String(item.status || ""))) withdrawing += amount;
+    }
+    const info = body.page_info || {};
+    if (!info.has_next_page || !info.end_cursor) break;
+    after = String(info.end_cursor);
+  }
+  return { withdrawn, withdrawing };
+}
+
+async function attachPayouts(apiKey: string, accounts: KeyAccount[]) {
+  for (let index = 0; index < accounts.length; index += 4) {
+    const slice = accounts.slice(index, index + 4);
+    await Promise.all(
+      slice.map(async (account) => {
+        try {
+          const totals = await sumPayouts(apiKey, account.id);
+          account.withdrawn = totals.withdrawn;
+          account.withdrawing = totals.withdrawing;
+        } catch {
+          account.withdrawn = null;
+          account.withdrawing = 0;
+        }
+      }),
+    );
+  }
+}
+
 function asAccount(detail: any, local: Map<string, LocalAccount>): KeyAccount {
   const balances = detail.balances || [];
   const token =
@@ -63,6 +105,8 @@ function asAccount(detail: any, local: Map<string, LocalAccount>): KeyAccount {
     available: num(breakdown.available),
     pending: num(breakdown.pending),
     reserve: num(breakdown.reserve),
+    withdrawn: null,
+    withdrawing: 0,
     releases,
     pendencies: (detail.required_actions || [])
       .map((action: any) => action.title || action.action)
@@ -98,6 +142,7 @@ async function readKey(apiKey: string, local: Map<string, LocalAccount>) {
     details.push(...batch);
   }
   const accounts = details.map((detail) => asAccount(detail, local));
+  await attachPayouts(apiKey, accounts);
   const mother = accounts.find((account) => account.kind === "mae") ?? null;
   const subs = accounts
     .filter((account) => account.kind === "sub")
@@ -135,9 +180,10 @@ export async function loadKeyGroups(): Promise<KeyGroup[]> {
     try {
       const read = await readKey(key.apiKey, local);
       const seen = new Set([read.mother?.id, ...read.subs.map((account) => account.id)].filter(Boolean));
+      const extra: KeyAccount[] = [];
       for (const user of users) {
         if (user.whopApiKey !== key.apiKey || !user.whopBizId || seen.has(user.whopBizId)) continue;
-        read.subs.push({
+        const account: KeyAccount = {
           id: user.whopBizId,
           name: user.name && user.name !== user.email ? user.name : "",
           email: user.email,
@@ -146,13 +192,18 @@ export async function loadKeyGroups(): Promise<KeyGroup[]> {
           available: 0,
           pending: 0,
           reserve: 0,
+          withdrawn: null,
+          withdrawing: 0,
           releases: [],
           pendencies: [],
           localUserId: user.id,
           sales: user._count.sales,
           feeOverride: user.feePercentOverride,
-        });
+        };
+        extra.push(account);
+        read.subs.push(account);
       }
+      await attachPayouts(key.apiKey, extra);
       read.subs.sort((left, right) => left.email.localeCompare(right.email));
       groups.push({ id: key.id, apiKey: key.apiKey, ...read });
     } catch (error) {
@@ -167,6 +218,8 @@ export async function loadKeyGroups(): Promise<KeyGroup[]> {
           available: 0,
           pending: 0,
           reserve: 0,
+          withdrawn: null,
+          withdrawing: 0,
           releases: [] as { date: string; amount: number }[],
           pendencies: [] as string[],
           localUserId: user.id,
