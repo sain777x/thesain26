@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 
 export type KeyAccount = {
   id: string;
+  name: string;
   email: string;
   kind: "mae" | "sub";
   status: string;
@@ -39,7 +40,7 @@ async function whopGet(apiKey: string, path: string) {
   return response.json() as Promise<any>;
 }
 
-function asAccount(detail: any, local: Map<string, { id: string; sales: number; feeOverride: number | null }>): KeyAccount {
+function asAccount(detail: any, local: Map<string, LocalAccount>): KeyAccount {
   const balances = detail.balances || [];
   const token =
     balances.find((item: any) => String(item.symbol || item.currency || "").toUpperCase() === "USD") ||
@@ -48,9 +49,15 @@ function asAccount(detail: any, local: Map<string, { id: string; sales: number; 
   const releases = (breakdown.pending_settlements || [])
     .map((item: any) => ({ date: String(item.date || ""), amount: num(item.amount) }))
     .filter((item: { date: string; amount: number }) => item.date && item.amount > 0);
+  const email = detail.email || detail.title || detail.id;
+  const linked = local.get(detail.id);
+  const name = [detail.title, linked?.name].find(
+    (value) => value && value !== email && value !== detail.id,
+  ) || "";
   return {
     id: detail.id,
-    email: detail.email || detail.title || detail.id,
+    name,
+    email,
     kind: detail.parent_account ? "sub" : "mae",
     status: detail.status || "unknown",
     available: num(breakdown.available),
@@ -60,13 +67,15 @@ function asAccount(detail: any, local: Map<string, { id: string; sales: number; 
     pendencies: (detail.required_actions || [])
       .map((action: any) => action.title || action.action)
       .filter(Boolean),
-    localUserId: local.get(detail.id)?.id ?? null,
-    sales: local.get(detail.id)?.sales ?? 0,
-    feeOverride: local.get(detail.id)?.feeOverride ?? null,
+    localUserId: linked?.id ?? null,
+    sales: linked?.sales ?? 0,
+    feeOverride: linked?.feeOverride ?? null,
   };
 }
 
-async function readKey(apiKey: string, local: Map<string, { id: string; sales: number; feeOverride: number | null }>) {
+type LocalAccount = { id: string; name: string; sales: number; feeOverride: number | null };
+
+async function readKey(apiKey: string, local: Map<string, LocalAccount>) {
   const listed = await whopGet(apiKey, "/accounts?limit=100");
   const rows = (listed.data || []).filter((item: any) => item?.id) as any[];
   const details: any[] = [];
@@ -103,6 +112,7 @@ export async function loadKeyGroups(): Promise<KeyGroup[]> {
       where: { whopBizId: { not: null } },
       select: {
         id: true,
+        name: true,
         email: true,
         whopBizId: true,
         whopApiKey: true,
@@ -117,7 +127,7 @@ export async function loadKeyGroups(): Promise<KeyGroup[]> {
       .filter((user) => user.whopBizId)
       .map((user) => [
         user.whopBizId as string,
-        { id: user.id, sales: user._count.sales, feeOverride: user.feePercentOverride },
+        { id: user.id, name: user.name, sales: user._count.sales, feeOverride: user.feePercentOverride },
       ]),
   );
   const groups: KeyGroup[] = [];
@@ -129,6 +139,7 @@ export async function loadKeyGroups(): Promise<KeyGroup[]> {
         if (user.whopApiKey !== key.apiKey || !user.whopBizId || seen.has(user.whopBizId)) continue;
         read.subs.push({
           id: user.whopBizId,
+          name: user.name && user.name !== user.email ? user.name : "",
           email: user.email,
           kind: "sub",
           status: user.accountStatus || "active",
@@ -149,6 +160,7 @@ export async function loadKeyGroups(): Promise<KeyGroup[]> {
         .filter((user) => user.whopApiKey === key.apiKey && user.whopBizId)
         .map((user) => ({
           id: user.whopBizId as string,
+          name: user.name && user.name !== user.email ? user.name : "",
           email: user.email,
           kind: "sub" as const,
           status: user.accountStatus || "active",

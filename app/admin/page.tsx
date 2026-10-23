@@ -28,6 +28,7 @@ function AccountRow({ account }: { account: KeyAccount }) {
   return (
     <tr className={account.kind === "mae" ? "border-t bg-muted/40" : "border-t"}>
       <td className="px-3 py-3">
+        {account.name ? <p className="font-medium">{account.name}</p> : null}
         <p>{account.email}</p>
         <p className="font-mono text-xs text-muted-foreground">{account.id}</p>
       </td>
