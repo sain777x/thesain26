@@ -119,9 +119,23 @@ function asAccount(detail: any, local: Map<string, LocalAccount>): KeyAccount {
 
 type LocalAccount = { id: string; name: string; sales: number; feeOverride: number | null };
 
+async function listAccounts(apiKey: string) {
+  const rows: any[] = [];
+  let after = "";
+  for (let page = 0; page < 20; page += 1) {
+    const query = new URLSearchParams({ limit: "100" });
+    if (after) query.set("after", after);
+    const body = await whopGet(apiKey, `/accounts?${query.toString()}`);
+    rows.push(...((body.data || []).filter((item: any) => item?.id) as any[]));
+    const info = body.page_info || {};
+    if (!info.has_next_page || !info.end_cursor || info.end_cursor === after) break;
+    after = String(info.end_cursor);
+  }
+  return rows;
+}
+
 async function readKey(apiKey: string, local: Map<string, LocalAccount>) {
-  const listed = await whopGet(apiKey, "/accounts?limit=100");
-  const rows = (listed.data || []).filter((item: any) => item?.id) as any[];
+  const rows = await listAccounts(apiKey);
   const details: any[] = [];
   for (let index = 0; index < rows.length; index += 4) {
     const slice = rows.slice(index, index + 4);
@@ -142,8 +156,24 @@ async function readKey(apiKey: string, local: Map<string, LocalAccount>) {
     details.push(...batch);
   }
   const accounts = details.map((detail) => asAccount(detail, local));
-  await attachPayouts(apiKey, accounts);
-  const mother = accounts.find((account) => account.kind === "mae") ?? null;
+  let mother = accounts.find((account) => account.kind === "mae") ?? null;
+  if (!mother) {
+    const parentId = details
+      .map((detail) => detail.parent_account?.id)
+      .find((id: unknown) => typeof id === "string" && id.startsWith("biz_"));
+    if (parentId && !accounts.some((account) => account.id === parentId)) {
+      try {
+        const detail = await whopGet(apiKey, `/accounts/${parentId}`);
+        mother = asAccount({ ...detail, parent_account: null }, local);
+      } catch {
+        mother = null;
+      }
+    }
+  }
+  const payoutAccounts = mother && !accounts.some((account) => account.id === mother?.id)
+    ? [...accounts, mother]
+    : accounts;
+  await attachPayouts(apiKey, payoutAccounts);
   const subs = accounts
     .filter((account) => account.kind === "sub")
     .sort((left, right) => left.email.localeCompare(right.email));
